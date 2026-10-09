@@ -130,6 +130,7 @@ function sincronizar() {
     }
 
     proc.guardar();
+    limpiarCacheApp_();
     config.getRange(CELDA.ULTIMA_SYNC).setValue(inicio);
     config.getRange(CELDA.RESULTADO).setValue(texto);
     return texto;

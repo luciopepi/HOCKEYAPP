@@ -8,6 +8,7 @@
  */
 const fs = require('fs');
 const vm = require('vm');
+const path = require('path');
 
 const SHEET_TZ = 'America/Argentina/San_Juan';
 
@@ -323,6 +324,11 @@ function createWorld(opts) {
     },
     UrlFetchApp: { fetch: makeMP(world, opts.mp || {}) },
     PropertiesService: { getScriptProperties: () => ({ getProperty: k => null }), getUserProperties: () => ({ getProperty: k => (k === 'MP_ACCESS_TOKEN' ? world.token : null), setProperty: (k, v) => { world.token = v; } }) },
+    CacheService: { getScriptCache: () => ({
+      get: k => (world.cache && world.cache[k]) || null,
+      put: (k, v) => { (world.cache = world.cache || {})[k] = v; },
+      remove: k => { if (world.cache) delete world.cache[k]; world.cacheRemoved = (world.cacheRemoved || 0) + 1; },
+    }) },
     LockService: { getScriptLock: () => ({ tryLock: () => true, waitLock: () => {}, releaseLock: () => {} }) },
     Utilities: { formatDate, sleep: () => { world.sleeps++; } },
     ScriptApp: {
@@ -349,6 +355,8 @@ function createWorld(opts) {
   world.setNow = iso => ctx.__setNow(Date.parse(iso));
   const src = fs.readFileSync(opts.codePath, 'utf8');
   vm.runInContext(src, ctx, { filename: 'Codigo.gs' });
+  const web = path.join(path.dirname(opts.codePath), 'Web.gs');
+  if (fs.existsSync(web)) vm.runInContext(fs.readFileSync(web, 'utf8'), ctx, { filename: 'Web.gs' });
   world.ctx = ctx;
   world.run = (fn) => vm.runInContext(fn + '()', ctx);
   world.sheet = n => world.sheets.get(n);

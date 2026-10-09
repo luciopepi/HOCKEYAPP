@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<base target="_top">
+<meta charset="utf-8">
+<link rel="preconnect" href="https://fonts.gstatic.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --navy: #0F2340; --azul: #1F4FD1; --azul-claro: #E7EEFD; --naranja: #B8430E; --naranja-claro: #FDECE2;
+    --fondo: #F2F4F7; --tinta: #0E1726; --gris: #475263; --gris2: #5E6878; --linea: #E2E6EC;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--fondo); color: var(--tinta); font-family: 'Barlow', system-ui, sans-serif; font-size: 15px; }
+  .num { font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-variant-numeric: tabular-nums; }
+  header { background: var(--navy); color: #fff; padding: 18px 18px 22px; }
+  header .top { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+  header .marca { display: flex; align-items: center; gap: 10px; }
+  header .logo { width: 38px; height: 38px; border-radius: 11px; background: var(--azul); display: flex; align-items: center; justify-content: center; font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 21px; }
+  header .sub { color: #B9C6DC; font-size: 13px; }
+  header .etq { margin-top: 18px; font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: #B9C6DC; }
+  header .monto { display: flex; align-items: baseline; gap: 8px; margin-top: 6px; }
+  header .monto .num { font-size: 50px; line-height: 1; }
+  header .monto span:last-child { color: #B9C6DC; font-size: 16px; }
+  .barra { height: 12px; border-radius: 6px; background: #22385A; overflow: hidden; margin-top: 12px; }
+  .barra div { height: 100%; border-radius: 6px; background: #6E9BFF; }
+  header .pie { display: flex; justify-content: space-between; margin-top: 10px; font-weight: 600; }
+  header .pie .falta { color: #FFB48A; }
+  header .pie .ok { color: #9EE0B5; }
+  header .nota { color: #B9C6DC; font-size: 13px; margin-top: 6px; }
+  main { padding: 14px 14px 96px; max-width: 640px; margin: 0 auto; }
+  .seccion { display: none; flex-direction: column; gap: 14px; }
+  .seccion.activa { display: flex; }
+  .card { background: #fff; border: 1px solid var(--linea); border-radius: 16px; padding: 16px; }
+  .card h2 { margin: 0 0 10px; font-size: 17px; font-weight: 600; }
+  .kpis { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  .kpi .etq { color: var(--gris); font-size: 14px; }
+  .kpi .num { font-size: 28px; margin-top: 4px; display: block; }
+  .kpi .det { color: var(--gris2); font-size: 13px; }
+  .fila { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid #EEF1F5; }
+  .fila:last-child { border-bottom: none; }
+  .avatar { width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 13px; flex: none; background: #EEF1F5; color: var(--gris); }
+  .avatar.debe { background: var(--naranja-claro); color: var(--naranja); }
+  .fila .cuerpo { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .fila .titulo { font-weight: 600; font-size: 15px; }
+  .fila .det { color: var(--gris2); font-size: 13px; }
+  .fila .num { font-size: 19px; }
+  .rojo { color: var(--naranja); }
+  .azul { color: var(--azul); }
+  .vacio { color: var(--gris2); padding: 6px 0; }
+  .grilla { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { border-collapse: separate; border-spacing: 0; }
+  th, td { padding: 6px 4px; text-align: center; font-size: 13px; white-space: nowrap; }
+  th { color: var(--gris); font-weight: 600; }
+  th:first-child, td:first-child { position: sticky; left: 0; background: #fff; text-align: left; padding-right: 10px; font-weight: 600; font-size: 14px; }
+  th.actual { color: var(--azul); }
+  .celda { width: 30px; height: 30px; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; }
+  .celda.pagado { background: var(--azul); color: #fff; }
+  .celda.debe { background: var(--naranja-claro); border: 1.5px solid #D9561A; color: var(--naranja); font-weight: 700; }
+  .celda.nada { background: #EEF1F5; }
+  .leyenda { display: flex; flex-wrap: wrap; gap: 14px; font-size: 13px; color: var(--gris); margin-bottom: 10px; }
+  .leyenda span { display: inline-flex; align-items: center; gap: 6px; }
+  .leyenda i { width: 14px; height: 14px; border-radius: 4px; display: inline-block; }
+  select { width: 100%; min-height: 48px; border: 1px solid #D5DAE2; border-radius: 12px; padding: 0 12px; font: inherit; font-size: 16px; background: #fff; color: var(--tinta); }
+  label { display: block; font-size: 13px; font-weight: 600; color: var(--gris); margin-bottom: 6px; }
+  .estado { border-radius: 16px; padding: 16px; }
+  .estado.debe { background: var(--naranja-claro); color: #6E2707; }
+  .estado.ok { background: var(--azul-claro); color: #1A3E9E; }
+  .estado .num { font-size: 44px; line-height: 1.1; display: block; }
+  .tira { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; }
+  .tira div { display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 11px; color: var(--gris); }
+  .tira .celda { width: 100%; }
+  .alias { display: flex; align-items: center; gap: 10px; background: var(--fondo); border-radius: 12px; padding: 10px 10px 10px 14px; }
+  .alias b { flex: 1; font-size: 17px; }
+  button.copiar { min-height: 44px; padding: 0 14px; border: 1px solid #D5DAE2; border-radius: 10px; background: #fff; color: var(--azul); font: inherit; font-weight: 600; cursor: pointer; }
+  .actualizado { text-align: center; color: var(--gris2); font-size: 12px; }
+  nav { position: fixed; left: 0; right: 0; bottom: 0; background: #fff; border-top: 1px solid var(--linea); display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); padding: 6px 4px calc(8px + env(safe-area-inset-bottom)); }
+  nav button { min-height: 54px; border: none; background: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; font: inherit; font-size: 12px; color: var(--gris2); cursor: pointer; }
+  nav button.activa { color: var(--azul); font-weight: 600; }
+  nav svg { width: 22px; height: 22px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="top">
+    <div class="marca">
+      <div class="logo">H</div>
+      <div><div style="font-weight:600;font-size:17px">Caja del equipo</div><div class="sub">Hockey · <span id="mes"></span></div></div>
+    </div>
+  </div>
+  <div class="etq">Cancha del mes</div>
+  <div class="monto"><span class="num" id="recaudado"></span><span id="costo"></span></div>
+  <div class="barra"><div id="barra"></div></div>
+  <div class="pie"><span id="cobertura"></span><span id="falta"></span></div>
+  <div class="nota" id="notaCancha"></div>
+</header>
+
+<main>
+  <section class="seccion activa" id="s-inicio">
+    <div class="kpis">
+      <div class="card kpi"><div class="etq">Saldo en caja</div><span class="num" id="saldo"></span><div class="det">Mercado Pago y efectivo</div></div>
+      <div class="card kpi"><div class="etq">Fondo equipamiento</div><span class="num" id="fondo"></span><div class="det">Disponible después de la cancha</div></div>
+    </div>
+    <div class="card"><h2>Falta pagar este mes</h2><div id="pendientes"></div></div>
+    <div class="card"><h2>Últimos movimientos</h2><div id="ultimos"></div></div>
+  </section>
+
+  <section class="seccion" id="s-planilla">
+    <div class="card">
+      <h2>Planilla de cuotas</h2>
+      <div class="leyenda">
+        <span><i style="background:var(--azul)"></i>Pagado</span>
+        <span><i style="background:var(--naranja-claro);border:1.5px solid #D9561A"></i>Debe</span>
+        <span><i style="background:#EEF1F5"></i>Sin vencer</span>
+      </div>
+      <div class="grilla"><table id="tabla"></table></div>
+    </div>
+  </section>
+
+  <section class="seccion" id="s-cuota">
+    <div class="card">
+      <label for="quien">¿Quién sos?</label>
+      <select id="quien"></select>
+    </div>
+    <div id="miCuota" style="display:flex;flex-direction:column;gap:14px"></div>
+  </section>
+
+  <section class="seccion" id="s-caja">
+    <div class="kpis">
+      <div class="card kpi"><div class="etq">Saldo en caja</div><span class="num" id="saldo2"></span></div>
+      <div class="card kpi"><div class="etq">Cuotas adelantadas</div><span class="num" id="adelantos"></span></div>
+    </div>
+    <div class="card"><h2>Movimientos</h2><div id="movimientos"></div></div>
+  </section>
+
+  <p class="actualizado">Actualizado: <span id="actualizado"></span></p>
+</main>
+
+<nav>
+  <button data-s="inicio" class="activa" aria-label="Inicio"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/></svg>Inicio</button>
+  <button data-s="planilla" aria-label="Planilla"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M9 4v16"/></svg>Planilla</button>
+  <button data-s="cuota" aria-label="Mi cuota"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg>Mi cuota</button>
+  <button data-s="caja" aria-label="Caja"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4v16M3 8l4-4 4 4M17 20V4M13 16l4 4 4-4"/></svg>Caja</button>
+</nav>
+
+<script>
+const DATA = <?!= datos ?>;
+
+const $ = id => document.getElementById(id);
+const pesos = n => '$' + Math.round(n).toLocaleString('es-AR');
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const iniciales = a => a.split(/\s+/).map(p => p[0]).join('').slice(0, 2).toUpperCase();
+const estadoActual = m => m.estados[DATA.mesIdx] || '';
+
+function celda(estado) {
+  if (estado === 'Pagado') return '<span class="celda pagado" title="Pagado">✓</span>';
+  if (estado === 'Debe') return '<span class="celda debe" title="Debe">!</span>';
+  return '<span class="celda nada" title="Sin vencer"></span>';
+}
+
+function filaMovimiento(m) {
+  return '<div class="fila"><div class="cuerpo"><span class="titulo">' + esc(m.titulo) + '</span><span class="det">' +
+    esc(m.fecha) + (m.detalle ? ' · ' + esc(m.detalle) : '') + '</span></div><span class="num ' + (m.ingreso ? 'azul' : '') + '">' +
+    (m.ingreso ? '+' : '−') + pesos(m.monto) + '</span></div>';
+}
+
+function cabecera() {
+  const c = DATA.cancha;
+  $('mes').textContent = DATA.mes;
+  $('recaudado').textContent = pesos(c.recaudado);
+  $('costo').textContent = 'de ' + pesos(c.costo);
+  const pct = c.costo ? Math.min(100, Math.round(c.recaudado / c.costo * 100)) : 0;
+  $('barra').style.width = pct + '%';
+  $('cobertura').textContent = c.pagaron + ' de ' + c.total + ' pagaron';
+  if (c.faltan > 0) { $('falta').textContent = 'Faltan ' + pesos(c.faltan); $('falta').className = 'falta'; }
+  else { $('falta').textContent = 'Cubierta'; $('falta').className = 'ok'; }
+  $('notaCancha').textContent = (c.pagada ? 'Cancha pagada al club. ' : 'Vence el ' + c.vence + '. ') +
+    'Se necesitan ' + c.necesarios + ' cuotas para cubrirla.';
+}
+
+function inicio() {
+  $('saldo').textContent = pesos(DATA.caja.saldo);
+  $('fondo').textContent = pesos(DATA.caja.fondo);
+  const deben = DATA.integrantes.filter(m => estadoActual(m) !== 'Pagado');
+  $('pendientes').innerHTML = deben.length ? deben.map(m =>
+    '<div class="fila"><span class="avatar debe">' + esc(iniciales(m.apodo)) + '</span><div class="cuerpo"><span class="titulo">' +
+    esc(m.apodo) + '</span><span class="det">' + (m.debe > DATA.cuota ? 'Debe ' + Math.round(m.debe / DATA.cuota) + ' cuotas' : 'Cuota de ' + esc(DATA.mes)) +
+    '</span></div><span class="num rojo">' + pesos(m.debe) + '</span></div>').join('')
+    : '<div class="vacio">Todos al día.</div>';
+  $('ultimos').innerHTML = DATA.movimientos.slice(0, 5).map(filaMovimiento).join('') || '<div class="vacio">Sin movimientos.</div>';
+}
+
+function planilla() {
+  let html = '<thead><tr><th>Integrante</th>' + DATA.meses.map((m, i) =>
+    '<th class="' + (i === DATA.mesIdx ? 'actual' : '') + '">' + esc(m) + '</th>').join('') + '</tr></thead><tbody>';
+  html += DATA.integrantes.map(m => '<tr><td>' + esc(m.apodo) + '</td>' + m.estados.map(e => '<td>' + celda(e) + '</td>').join('') + '</tr>').join('');
+  $('tabla').innerHTML = html + '</tbody>';
+}
+
+function miCuota(apodo) {
+  const m = DATA.integrantes.find(x => x.apodo === apodo);
+  if (!m) { $('miCuota').innerHTML = ''; return; }
+  const debe = m.debe > 0;
+  const desde = Math.max(0, DATA.mesIdx - 1);
+  const tira = DATA.meses.slice(desde, desde + 6).map((mes, i) =>
+    '<div>' + celda(m.estados[desde + i]) + esc(mes) + '</div>').join('');
+  const pagos = m.pagos.length ? m.pagos.map(p => '<div class="fila"><div class="cuerpo"><span class="titulo">' + esc(p.fecha) +
+    '</span><span class="det">' + esc(p.medio) + '</span></div><span class="num">' + pesos(p.monto) + '</span></div>').join('')
+    : '<div class="vacio">No hay pagos cargados.</div>';
+  $('miCuota').innerHTML =
+    '<div class="estado ' + (debe ? 'debe' : 'ok') + '"><div style="font-size:13px;font-weight:600;letter-spacing:.08em;text-transform:uppercase">' +
+    (debe ? 'Para ponerte al día' : 'Estás al día') + '</div><span class="num">' + (debe ? pesos(m.debe) : '✓') + '</span><div>' +
+    (m.hasta ? 'Pagado hasta ' + esc(m.hasta) : 'Sin cuotas pagadas todavía') +
+    (m.adelantado > 0 ? ' · ' + pesos(m.adelantado) + ' adelantado' : '') + '</div></div>' +
+    '<div class="card"><h2>Mis meses</h2><div class="tira">' + tira + '</div></div>' +
+    (DATA.alias ? '<div class="card"><h2>Cómo pagar</h2><div class="alias"><b id="aliasTxt">' + esc(DATA.alias) +
+      '</b><button class="copiar" id="copiar">Copiar alias</button></div><p class="det" style="color:var(--gris2);font-size:13px;margin:10px 0 0">Transferí desde Mercado Pago: así tu pago se registra solo.</p></div>' : '') +
+    '<div class="card"><h2>Mis pagos</h2>' + pagos + '</div>';
+  const b = $('copiar');
+  if (b) b.onclick = () => {
+    const ok = () => { b.textContent = 'Copiado'; setTimeout(() => (b.textContent = 'Copiar alias'), 1500); };
+    if (navigator.clipboard) navigator.clipboard.writeText(DATA.alias).then(ok, () => seleccionar());
+    else seleccionar();
+  };
+}
+
+function seleccionar() {
+  const r = document.createRange(); r.selectNodeContents($('aliasTxt'));
+  const s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
+}
+
+function cuotaSelector() {
+  const sel = $('quien');
+  sel.innerHTML = '<option value="">Elegí tu nombre</option>' + DATA.integrantes.map(m => '<option>' + esc(m.apodo) + '</option>').join('');
+  let guardado = '';
+  try { guardado = localStorage.getItem('cajaHockeyQuien') || ''; } catch (e) {}
+  if (guardado && DATA.integrantes.some(m => m.apodo === guardado)) sel.value = guardado;
+  miCuota(sel.value);
+  sel.onchange = () => {
+    try { localStorage.setItem('cajaHockeyQuien', sel.value); } catch (e) {}
+    miCuota(sel.value);
+  };
+}
+
+function caja() {
+  $('saldo2').textContent = pesos(DATA.caja.saldo);
+  $('adelantos').textContent = pesos(DATA.caja.adelantos);
+  $('movimientos').innerHTML = DATA.movimientos.map(filaMovimiento).join('') || '<div class="vacio">Sin movimientos.</div>';
+}
+
+document.querySelectorAll('nav button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('nav button').forEach(x => x.classList.toggle('activa', x === b));
+  document.querySelectorAll('.seccion').forEach(s => s.classList.toggle('activa', s.id === 's-' + b.dataset.s));
+  window.scrollTo(0, 0);
+});
+
+$('actualizado').textContent = DATA.actualizado;
+cabecera(); inicio(); planilla(); cuotaSelector(); caja();
+</script>
+</body>
+</html>

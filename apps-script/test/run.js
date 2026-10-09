@@ -477,6 +477,61 @@ section('N5 sender name that looks like a formula is stored as text');
   check('no formulas created', w.formulas.length === 0, 'formulas: ' + w.formulas.join(' | '));
 }
 
+section('W1 app del equipo: datos sin información personal');
+{
+  const w = newWorld(basePayments());
+  w.addSheet('Resumen', [
+    ['Caja Hockey', ''],
+    ['', ''],
+    ['Mes actual', { value: art('2026-10-01 00:00'), fmt: 'mmm yyyy' }],
+    ['', ''], ['', ''],
+    ['Integrantes con el mes pago', 3],
+    ['Integrantes en total', 5],
+    ['Integrantes necesarios para cubrir la cancha', 8],
+    ['Recaudado para la cancha ($)', 45000],
+    ['Costo de la cancha ($)', 120000],
+    ['Faltan ($)', 75000],
+    ['Cobertura', 0.375],
+    ['Vence el', { value: art('2026-10-10 00:00'), fmt: 'dd/mm/yyyy' }],
+    ['Cancha del mes pagada', 'Sí'],
+    ['', ''], ['', ''], ['', ''], ['', ''],
+    ['', ''], ['', ''],
+    ['Saldo en caja ($)', 96000],
+    ['Cuotas pagadas por adelantado ($)', 15000],
+    ['Disponible para equipamiento ($)', 81000],
+    ['', ''], ['', ''],
+    ['Integrantes con deuda', 2],
+    ['Deuda total, incluido el mes actual ($)', 30000],
+  ]);
+  const meses = [];
+  for (let i = 0; i < 12; i++) meses.push({ value: art(`${2026 + Math.floor((9 + i) / 12)}-${String((9 + i) % 12 + 1).padStart(2, '0')}-01 00:00`), fmt: 'mmm yy' });
+  const est = n => Array.from({ length: 12 }, (_, i) => (i < n ? 'Pagado' : (i === 0 ? 'Debe' : '')));
+  w.addSheet('Cuotas', [
+    ['Integrante', 'Pagado', 'Meses', 'A cuenta', 'Debe', 'Adelantado', 'Pagado hasta'].concat(meses),
+    ['Juancho', 45000, 3, 0, 0, 30000, 'dic 26'].concat(est(3)),
+    ['Colo', 0, 0, 0, 15000, 0, '-'].concat(est(0)),
+    ['Totales', 45000, 3, 0, 15000, 30000, ''],
+  ]);
+  w.sheet('Config').getRange('B7').setValue('luciopepi');
+  w.sheet('Config').getRange('B28').setValue(art('2026-10-01 00:00'));
+  let d, e2;
+  try { d = w.run('datosApp_'); } catch (e) { e2 = e; }
+  check('datosApp_ does not throw', !e2, e2 && e2.stack);
+  if (d) {
+    const json = JSON.stringify(d);
+    check('cancha and caja read by label', d.cancha.costo === 120000 && d.cancha.faltan === 75000 && d.cancha.pagada === true && d.caja.fondo === 81000, JSON.stringify(d.cancha) + JSON.stringify(d.caja));
+    check('integrantes stop at Totales', d.integrantes.length === 2 && d.integrantes[1].apodo === 'Colo', JSON.stringify(d.integrantes.map(m => m.apodo)));
+    check('estados and debt per member', d.integrantes[0].estados[2] === 'Pagado' && d.integrantes[1].debe === 15000 && d.integrantes[1].hasta === '', JSON.stringify(d.integrantes[1]));
+    check('mes actual index found', d.mesIdx === 0 && d.meses.length === 12, d.mesIdx + ' ' + d.meses.length);
+    check('payments attached to members', d.integrantes[0].pagos.length > 0, JSON.stringify(d.integrantes[0].pagos));
+    check('no CUIT, operation numbers or names', !/20-?30111222|180000000\d+|182263652715|Juan Pérez|Club Social/.test(json), json.slice(0, 300));
+    check('movimientos mixes ingresos and gastos', d.movimientos.some(m => m.ingreso) && d.movimientos.some(m => !m.ingreso) && d.movimientos.length <= 40);
+    check('result cached', !!(w.cache && w.cache.datosApp));
+  }
+  sync(w, '2026-10-10 15:00');
+  check('sync clears the app cache', !(w.cache && w.cache.datosApp) && w.cacheRemoved > 0);
+}
+
 // ------------------------------------------------------------ summary
 const fails = results.filter(r => !r.ok);
 console.log('\n================ SUMMARY ================');

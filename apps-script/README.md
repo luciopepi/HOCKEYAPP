@@ -1,6 +1,9 @@
-# Sincronización con Mercado Pago
+# Sincronización con Mercado Pago y app del equipo
 
-Script de Google Apps Script que trae las transferencias de Mercado Pago a la planilla **Caja Hockey**. Corre en los servidores de Google, gratis, cada 30 minutos.
+Script de Google Apps Script para la planilla **Caja Hockey**. Corre en los servidores de Google, gratis:
+
+- [`Codigo.gs`](Codigo.gs) trae las transferencias de Mercado Pago cada 30 minutos.
+- [`Web.gs`](Web.gs) y [`App.html`](App.html) publican la **app del equipo**: una página para el celular con el estado de la caja.
 
 ## Qué hace
 
@@ -42,6 +45,40 @@ Script de Google Apps Script que trae las transferencias de Mercado Pago a la pl
    - Si no lo dicen, dejá B33 en 10/10/2026 y cargá a mano los pagos del 09/10 que falten.
 7. **Caja Hockey → Activar sincronización cada 30 minutos.** Listo.
 
+## App del equipo (para el celular)
+
+Página de solo lectura. Muestra la cancha del mes, quién falta pagar, la planilla de cuotas, "Mi cuota" y los movimientos. **No muestra** CUIT, cuentas, números de operación ni notas.
+
+### Publicarla (una sola vez, desde la computadora)
+
+1. En el editor de Apps Script, **+ → Script**, nombre `Web`. Pegá el contenido de [`Web.gs`](Web.gs).
+2. **+ → HTML**, nombre `App`. Pegá el contenido de [`App.html`](App.html). Guardá.
+3. **Implementar → Nueva implementación:**
+   - Tipo: **Aplicación web** (engranaje junto a "Seleccionar tipo").
+   - Ejecutar como: **Yo**.
+   - Quién tiene acceso: **Cualquier persona**.
+4. **Implementar** y copiá la URL que termina en `/exec`. Ese es el link de la app.
+
+### Compartirla
+
+- Mandá el link `/exec` por WhatsApp (conviene fijarlo en el grupo).
+- No hace falta cuenta de Google ni instalar nada.
+- Cada uno elige su nombre en **Mi cuota** y queda guardado en su celular.
+
+### Instalarla en el celular (ícono en la pantalla de inicio)
+
+| Celular | Pasos |
+|---|---|
+| Android (Chrome) | Abrir el link → menú **⋮** → **Agregar a la pantalla principal** |
+| iPhone (Safari) | Abrir el link → **Compartir** (cuadrado con flecha) → **Agregar a inicio** |
+
+### A tener en cuenta
+
+- Arriba aparece un aviso de Google ("Esta aplicación fue creada por otro usuario"). Es normal en las apps de Apps Script.
+- Los pagos sincronizados aparecen al instante en la app. Los cambios hechos a mano en la planilla, en hasta 5 minutos.
+- Si actualizás `Web.gs` o `App.html`: **Implementar → Administrar implementaciones → editar (lápiz) → Versión: Nueva versión → Implementar**. El link no cambia.
+- Cualquiera con el link ve los apodos, las cuotas y los montos. No lo publiques fuera del grupo.
+
 ## Uso diario
 
 - No hace falta hacer nada: cada 30 minutos se cargan los pagos nuevos.
@@ -72,7 +109,7 @@ Script de Google Apps Script que trae las transferencias de Mercado Pago a la pl
 
 ## Pruebas
 
-`test/` tiene un simulador de Google Sheets y de la API de Mercado Pago con 74 casos. Para correrlo:
+`test/` tiene un simulador de Google Sheets y de la API de Mercado Pago con 84 casos, incluida la app del equipo. Para correrlo:
 
 ```
 TZ=America/Argentina/San_Juan node apps-script/test/run.js
