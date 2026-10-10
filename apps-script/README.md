@@ -26,6 +26,8 @@ Script de Google Apps Script para la planilla **Caja Hockey**. Corre en los serv
 
 ## Instalación (una sola vez, unos 10 minutos, desde la computadora)
 
+> **Atajo:** [`CLAUDE_EN_CHROME.md`](CLAUDE_EN_CHROME.md) tiene un prompt para que la extensión Claude en Chrome haga la instalación y publique la app. Vos solo autorizás los permisos y pegás la clave.
+
 1. **Abrí la planilla** Caja Hockey → menú **Extensiones → Apps Script**.
 2. **Pegá el código:** borrá lo que haya en `Código.gs` y pegá todo el contenido de [`Codigo.gs`](Codigo.gs). Guardá (ícono de disquete).
 3. **Permisos acotados:**
