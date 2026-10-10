@@ -84,6 +84,18 @@ class Sheet {
   hideSheet() { this.hidden = true; return this; }
   insertColumnsAfter(after, n) { this.maxCols += n; return this; }
   insertRowsAfter(after, n) { this.maxRows += n; return this; }
+  // Mueve las celdas desde la fila r (las fórmulas no se reescriben: limitación del simulador).
+  shiftRows_(r, delta) {
+    const nuevo = new Map();
+    for (const [k, x] of this.cells) {
+      const [rr, cc] = k.split(',').map(Number);
+      if (delta < 0 && rr === r) continue;
+      nuevo.set((rr >= r ? rr + delta : rr) + ',' + cc, x);
+    }
+    this.cells = nuevo;
+  }
+  insertRowBefore(r) { this.shiftRows_(r, 1); this.maxRows += 1; this.world.log.push('insertRowBefore ' + this.name + ' ' + r); return this; }
+  deleteRow(r) { this.shiftRows_(r, -1); this.maxRows -= 1; this.world.log.push('deleteRow ' + this.name + ' ' + r); return this; }
   getLastRow() {
     let last = 0;
     for (const [k, x] of this.cells) {
@@ -209,6 +221,31 @@ class Range {
   setBackground() { return this; }
   setHorizontalAlignment() { return this; }
   setWrap() { return this; }
+  copyTo(dest, type) {
+    for (let i = 0; i < Math.min(this.nr, dest.nr); i++) for (let j = 0; j < Math.min(this.nc, dest.nc); j++) {
+      const src = this.sheet.cell(this.r + i, this.c + j);
+      const dst = dest.sheet.cell(dest.r + i, dest.c + j, true);
+      if (src) { dst.fmt = src.fmt; dst.color = src.color; }
+    }
+    this.sheet.world.log.push('copyTo ' + type + ' ' + dest.sheet.name + '!' + dest.getA1Notation());
+    return this;
+  }
+  getFormulasR1C1() {
+    const out = [];
+    for (let i = 0; i < this.nr; i++) {
+      const row = [];
+      for (let j = 0; j < this.nc; j++) { const x = this.sheet.cell(this.r + i, this.c + j); row.push(x && x.formula ? x.formula : ''); }
+      out.push(row);
+    }
+    return out;
+  }
+  setFormulasR1C1(f) {
+    f.forEach((row, i) => row.forEach((v, j) => {
+      const x = this.sheet.cell(this.r + i, this.c + j, true);
+      if (v) { x.formula = v; x.formulaValue = '#FORMULA'; x.v = ''; } else { delete x.formula; delete x.formulaValue; x.v = ''; }
+    }));
+    return this;
+  }
 }
 
 function writeCell(sheet, r, c, v) {
@@ -289,7 +326,7 @@ function resp(code, body) {
 function createWorld(opts) {
   const world = {
     me: opts.me, token: 'APP_USR-test', payments: opts.payments || [],
-    sheets: new Map(), fetches: [], log: [], formulas: [], consoleOut: [], sleeps: 0, triggers: [],
+    sheets: new Map(), fetches: [], log: [], scriptProps: {}, formulas: [], consoleOut: [], sleeps: 0, triggers: [],
   };
   const ss = {
     getSheetByName: n => world.sheets.get(n) || null,
@@ -319,18 +356,25 @@ function createWorld(opts) {
   const sandbox = {
     console: { log: (...a) => world.consoleOut.push(a.join(' ')), error: (...a) => world.consoleOut.push('ERR ' + a.join(' ')), warn: (...a) => world.consoleOut.push('WARN ' + a.join(' ')) },
     SpreadsheetApp: {
-      getActive: () => ss, getActiveSpreadsheet: () => ss,
+      getActive: () => ss, getActiveSpreadsheet: () => ss, flush: () => {},
+      CopyPasteType: { PASTE_FORMAT: 'PASTE_FORMAT', PASTE_NORMAL: 'PASTE_NORMAL' },
       getUi: () => { if (opts.ui) return opts.ui; throw new Error('Cannot call SpreadsheetApp.getUi() from this context.'); },
     },
     UrlFetchApp: { fetch: makeMP(world, opts.mp || {}) },
-    PropertiesService: { getScriptProperties: () => ({ getProperty: k => null }), getUserProperties: () => ({ getProperty: k => (k === 'MP_ACCESS_TOKEN' ? world.token : null), setProperty: (k, v) => { world.token = v; } }) },
+    PropertiesService: { getScriptProperties: () => ({ getProperty: k => (world.scriptProps[k] == null ? null : world.scriptProps[k]), setProperty: (k, v) => { world.scriptProps[k] = String(v); } }), getUserProperties: () => ({ getProperty: k => (k === 'MP_ACCESS_TOKEN' ? world.token : null), setProperty: (k, v) => { world.token = v; } }) },
     CacheService: { getScriptCache: () => ({
       get: k => (world.cache && world.cache[k]) || null,
       put: (k, v) => { (world.cache = world.cache || {})[k] = v; },
       remove: k => { if (world.cache) delete world.cache[k]; world.cacheRemoved = (world.cacheRemoved || 0) + 1; },
     }) },
     LockService: { getScriptLock: () => ({ tryLock: () => true, waitLock: () => {}, releaseLock: () => {} }) },
-    Utilities: { formatDate, sleep: () => { world.sleeps++; } },
+    Utilities: {
+      formatDate, sleep: () => { world.sleeps++; },
+      getUuid: () => require('crypto').randomUUID(),
+      DigestAlgorithm: { SHA_256: 'sha256' }, Charset: { UTF_8: 'utf8' },
+      computeDigest: (alg, text) => [...require('crypto').createHash(alg).update(String(text), 'utf8').digest()].map(b => (b > 127 ? b - 256 : b)),
+      base64Encode: bytes => Buffer.from(bytes.map(b => b & 255)).toString('base64'),
+    },
     ScriptApp: {
       newTrigger: h => { const t = { h }; const b = { timeBased: () => b, everyMinutes: () => b, create: () => { world.triggers.push(t); return t; } }; return b; },
       getProjectTriggers: () => world.triggers.map(t => ({ getHandlerFunction: () => t.h })),

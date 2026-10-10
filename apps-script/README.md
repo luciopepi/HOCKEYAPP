@@ -81,6 +81,29 @@ Página de solo lectura. Muestra la cancha del mes, quién falta pagar, la plani
 - Si actualizás `Web.gs` o `App.html`: **Implementar → Administrar implementaciones → editar (lápiz) → Versión: Nueva versión → Implementar**. El link no cambia.
 - Cualquiera con el link ve los apodos, las cuotas y los montos. No lo publiques fuera del grupo.
 
+## Panel del administrador (en la app)
+
+Desde la app, con un PIN, podés:
+
+- **Cargar pago:** efectivo u otro pago que no llega por Mercado Pago (por ejemplo, Alfredo).
+- **Asignar transferencias sin asignar:** las que quedaron en **Por revisar**. Elegís de quién es y pasa a Pagos. Además se guarda el CUIT y el ID de Mercado Pago de esa cuenta en Integrantes: **los próximos pagos desde ahí se cargan solos**. Si había otras pendientes de la misma cuenta, se asignan también.
+- **Agregar integrante:** se suma al final de Integrantes y a la planilla de Cuotas. Con el CUIT, sus transferencias se cargan solas desde la primera.
+
+### Activarlo (una vez, desde la computadora)
+
+1. Pegá las versiones nuevas de `Codigo.gs`, `Web.gs` y `App.html` en Apps Script y guardá.
+2. **Implementar → Administrar implementaciones → lápiz → Versión: Nueva versión → Implementar.** El link de la app no cambia.
+3. Recargá la planilla → **Caja Hockey → Definir PIN del panel de administrador** (6 a 12 números).
+4. En la app, al pie de la pantalla: **Administrar** → PIN. Tildá "Recordar en este celular" solo en tu celular.
+
+### Seguridad del panel
+
+- El PIN se verifica en el servidor en cada acción. Se guarda cifrado (hash con sal) en las propiedades del script.
+- Después de 5 PIN incorrectos, el panel se bloquea 15 minutos para todos.
+- Cualquiera con el PIN puede cargar pagos: no lo compartas. Para cambiarlo, repetí "Definir PIN".
+- El panel no muestra CUIT ni números de cuenta.
+- Las funciones del menú (activar o desactivar la sincronización, probar conexión) solo funcionan desde la planilla, no desde la app.
+
 ## Uso diario
 
 - No hace falta hacer nada: cada 30 minutos se cargan los pagos nuevos.
@@ -94,7 +117,8 @@ Página de solo lectura. Muestra la cancha del mes, quién falta pagar, la plani
 
 - Primero por el **ID de Mercado Pago** (columna J de Integrantes). El script lo aprende solo con el primer pago de cada uno.
 - Si no lo tiene, por el **CUIT** (columna F).
-- Para un integrante nuevo, agregalo en Integrantes con su CUIT. Si todavía no lo sabés, la primera transferencia va a **Por revisar** y te muestra el CUIT para copiarlo.
+- Para un integrante nuevo, agregalo desde el panel de la app (o en Integrantes, con su fila en Cuotas). Si no sabés su CUIT, la primera transferencia va a **Por revisar**: asignala desde el panel y las siguientes se cargan solas.
+- Si alguien paga desde dos cuentas, poné los dos CUIT en la misma celda separados por coma.
 
 ## Seguridad
 
@@ -104,14 +128,14 @@ Página de solo lectura. Muestra la cancha del mes, quién falta pagar, la plani
 ## Límites conocidos
 
 - **Transferencias desde bancos:** Mercado Pago no informa quién las envía. Conviene pedir que paguen desde Mercado Pago.
-- **Efectivo:** se sigue cargando a mano en Pagos.
+- **Efectivo:** se carga desde el panel de la app (o a mano en Pagos).
 - **Demora:** los pagos aparecen con hasta 30 minutos de demora. Mercado Pago no avisa al instante de las transferencias recibidas.
 - **Links de pago:** el script todavía no lee los pagos hechos con link de pago (solo transferencias).
 - **Clave vencida:** si Mercado Pago la renueva o la revocás, el resultado en Config dice "rechazó la clave (401)". Guardá la nueva desde el menú.
 
 ## Pruebas
 
-`test/` tiene un simulador de Google Sheets y de la API de Mercado Pago con 84 casos, incluida la app del equipo. Para correrlo:
+`test/` tiene un simulador de Google Sheets y de la API de Mercado Pago con 124 casos, incluidos la app del equipo y el panel del administrador. Para correrlo:
 
 ```
 TZ=America/Argentina/San_Juan node apps-script/test/run.js

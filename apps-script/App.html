@@ -78,6 +78,24 @@
   nav button { min-height: 54px; border: none; background: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; font: inherit; font-size: 12px; color: var(--gris2); cursor: pointer; }
   nav button.activa { color: var(--azul); font-weight: 600; }
   nav svg { width: 22px; height: 22px; }
+  .campos { display: flex; flex-direction: column; gap: 12px; }
+  .dos { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  input[type=text], input[type=number], input[type=date], input[type=password], input[type=tel] { width: 100%; min-height: 48px; border: 1px solid #D5DAE2; border-radius: 12px; padding: 0 12px; font: inherit; font-size: 16px; background: #fff; color: var(--tinta); }
+  .check { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--gris); font-weight: 500; margin: 0; }
+  .check input { width: 20px; height: 20px; }
+  button.primario { min-height: 48px; border: none; border-radius: 12px; background: var(--azul); color: #fff; font: inherit; font-weight: 600; font-size: 16px; cursor: pointer; }
+  button.secundario { min-height: 44px; padding: 0 14px; border: 1px solid #D5DAE2; border-radius: 10px; background: #fff; color: var(--azul); font: inherit; font-weight: 600; cursor: pointer; flex: none; }
+  button:disabled { opacity: .55; cursor: default; }
+  button.link { border: none; background: none; padding: 4px; font: inherit; font-size: 12px; color: var(--azul); text-decoration: underline; cursor: pointer; }
+  .ayuda { color: var(--gris2); font-size: 13px; margin: 0; }
+  .error { color: var(--naranja); font-size: 14px; font-weight: 600; margin: 0; }
+  .asignar { display: flex; gap: 8px; margin-top: 8px; }
+  .asignar select { min-height: 44px; }
+  .pendiente { padding: 12px 0; border-bottom: 1px solid #EEF1F5; }
+  .pendiente:last-child { border-bottom: none; }
+  .pendiente .arriba { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
+  .aviso { position: fixed; left: 14px; right: 14px; bottom: calc(80px + env(safe-area-inset-bottom)); max-width: 612px; margin: 0 auto; background: var(--navy); color: #fff; border-radius: 12px; padding: 12px 14px; font-size: 14px; display: none; z-index: 10; }
+  .aviso.error { background: var(--naranja); }
 </style>
 </head>
 <body>
@@ -133,7 +151,9 @@
     <div class="card"><h2>Movimientos</h2><div id="movimientos"></div></div>
   </section>
 
-  <p class="actualizado">Actualizado: <span id="actualizado"></span></p>
+  <section class="seccion" id="s-admin"></section>
+
+  <p class="actualizado">Actualizado: <span id="actualizado"></span> · <button class="link" id="abrirAdmin">Administrar</button></p>
 </main>
 
 <nav>
@@ -142,9 +162,10 @@
   <button data-s="cuota" aria-label="Mi cuota"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg>Mi cuota</button>
   <button data-s="caja" aria-label="Caja"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4v16M3 8l4-4 4 4M17 20V4M13 16l4 4 4-4"/></svg>Caja</button>
 </nav>
+<div class="aviso" id="aviso" role="status"></div>
 
 <script>
-const DATA = <?!= datos ?>;
+let DATA = <?!= datos ?>;
 
 const $ = id => document.getElementById(id);
 const pesos = n => '$' + Math.round(n).toLocaleString('es-AR');
@@ -248,14 +269,144 @@ function caja() {
   $('movimientos').innerHTML = DATA.movimientos.map(filaMovimiento).join('') || '<div class="vacio">Sin movimientos.</div>';
 }
 
-document.querySelectorAll('nav button').forEach(b => b.onclick = () => {
-  document.querySelectorAll('nav button').forEach(x => x.classList.toggle('activa', x === b));
-  document.querySelectorAll('.seccion').forEach(s => s.classList.toggle('activa', s.id === 's-' + b.dataset.s));
+function mostrar(nombre) {
+  document.querySelectorAll('nav button').forEach(x => x.classList.toggle('activa', x.dataset.s === nombre));
+  document.querySelectorAll('.seccion').forEach(s => s.classList.toggle('activa', s.id === 's-' + nombre));
   window.scrollTo(0, 0);
-});
+}
+document.querySelectorAll('nav button').forEach(b => b.onclick = () => mostrar(b.dataset.s));
 
-$('actualizado').textContent = DATA.actualizado;
-cabecera(); inicio(); planilla(); cuotaSelector(); caja();
+function pintar() {
+  $('actualizado').textContent = DATA.actualizado;
+  cabecera(); inicio(); planilla(); cuotaSelector(); caja();
+}
+
+// ---------------------------------------------------------------- administrador
+// El PIN se verifica en el servidor en cada acción. Si se elige "recordar",
+// queda guardado solo en este celular.
+const CLAVE_PIN = 'cajaHockeyPin';
+let pin = '';
+let ADMIN = null;
+try { pin = localStorage.getItem(CLAVE_PIN) || ''; } catch (e) {}
+
+let avisoTimer = null;
+function aviso(texto, esError) {
+  const a = $('aviso');
+  a.textContent = texto;
+  a.className = 'aviso' + (esError ? ' error' : '');
+  a.style.display = 'block';
+  clearTimeout(avisoTimer);
+  avisoTimer = setTimeout(() => { a.style.display = 'none'; }, esError ? 7000 : 4500);
+}
+
+function servidor(funcion, args, alTerminar, boton) {
+  if (!window.google || !google.script) { aviso('El panel funciona solo dentro de la app publicada.', true); return; }
+  if (boton) boton.disabled = true;
+  google.script.run
+    .withSuccessHandler(r => { if (boton) boton.disabled = false; alTerminar(r); })
+    .withFailureHandler(e => {
+      if (boton) boton.disabled = false;
+      const texto = (e && e.message) || String(e);
+      if (/PIN incorrecto|Todavía no hay PIN/.test(texto)) { olvidarPin(); pintarLogin(texto); return; }
+      if (!ADMIN) { pintarLogin(texto); return; }
+      aviso(texto, true);
+    })[funcion].apply(null, args);
+}
+
+function olvidarPin() {
+  pin = ''; ADMIN = null;
+  try { localStorage.removeItem(CLAVE_PIN); } catch (e) {}
+}
+
+function opciones(lista, elegido) {
+  return lista.map(v => '<option' + (v === elegido ? ' selected' : '') + '>' + esc(v) + '</option>').join('');
+}
+
+function pintarLogin(error) {
+  $('s-admin').innerHTML = '<div class="card"><h2>Panel del administrador</h2><div class="campos">' +
+    '<p class="ayuda">Para cargar pagos en efectivo, asignar transferencias y agregar integrantes.</p>' +
+    '<div><label for="pin">PIN</label><input type="password" id="pin" inputmode="numeric" autocomplete="current-password" maxlength="12"></div>' +
+    '<label class="check"><input type="checkbox" id="recordar"> Recordar en este celular</label>' +
+    (error ? '<p class="error">' + esc(error) + '</p>' : '') +
+    '<button class="primario" id="entrar">Entrar</button></div></div>';
+  const entrar = () => {
+    const p = $('pin').value.trim();
+    if (!p) return;
+    servidor('adminEntrar', [p], r => {
+      pin = p; ADMIN = r;
+      if ($('recordar').checked) { try { localStorage.setItem(CLAVE_PIN, p); } catch (e) {} }
+      pintarAdmin();
+    }, $('entrar'));
+  };
+  $('entrar').onclick = entrar;
+  $('pin').onkeydown = e => { if (e.key === 'Enter') entrar(); };
+}
+
+function pintarAdmin() {
+  const a = ADMIN;
+  const pendientes = a.porRevisar.length ? a.porRevisar.map(t =>
+    '<div class="pendiente"><div class="arriba"><span class="titulo" style="font-weight:600">' + esc(t.nombre || 'Sin nombre') +
+    '</span><span class="num" style="font-size:19px">' + pesos(t.monto) + '</span></div>' +
+    '<div class="det" style="color:var(--gris2);font-size:13px">' + esc(t.fecha) + ' · ' + esc(t.medio) + '</div>' +
+    '<div class="det" style="color:var(--gris2);font-size:13px">' + esc(t.motivo) + '</div>' +
+    '<div class="asignar"><select data-op="' + esc(t.op) + '" aria-label="Integrante"><option value="">¿De quién es?</option>' + opciones(a.integrantes) +
+    '</select><button class="secundario" data-asignar="' + esc(t.op) + '">Asignar</button></div></div>').join('')
+    : '<div class="vacio">No hay transferencias sin asignar.</div>';
+
+  $('s-admin').innerHTML =
+    '<div class="card"><h2>Cargar pago</h2><div class="campos">' +
+      '<div><label for="pIntegrante">Integrante</label><select id="pIntegrante"><option value="">Elegí</option>' + opciones(a.integrantes) + '</select></div>' +
+      '<div class="dos"><div><label for="pMonto">Monto ($)</label><input type="number" id="pMonto" inputmode="numeric" min="1" step="1" value="' + esc(a.cuota || '') + '"></div>' +
+      '<div><label for="pFecha">Fecha</label><input type="date" id="pFecha" value="' + esc(a.hoy) + '" max="' + esc(a.hoy) + '"></div></div>' +
+      '<div class="dos"><div><label for="pImputacion">Es por</label><select id="pImputacion">' + opciones(['Cuota', 'Deuda anterior', 'Otro'], 'Cuota') + '</select></div>' +
+      '<div><label for="pMedio">Medio</label><select id="pMedio">' + opciones(['Efectivo', 'Transferencia bancaria', 'Transferencia Mercado Pago'], 'Efectivo') + '</select></div></div>' +
+      '<div><label for="pNota">Nota (opcional)</label><input type="text" id="pNota" maxlength="200"></div>' +
+      '<p class="ayuda">Las transferencias de Mercado Pago se cargan solas: no las cargues acá.</p>' +
+      '<button class="primario" id="guardarPago">Guardar pago</button></div></div>' +
+    '<div class="card"><h2>Transferencias sin asignar' + (a.pendientes ? ' (' + a.pendientes + ')' : '') + '</h2>' +
+      '<p class="ayuda">Mercado Pago no las pudo asociar a nadie. Al asignar una, los próximos pagos desde esa cuenta se cargan solos.</p>' +
+      pendientes + '</div>' +
+    '<div class="card"><h2>Agregar integrante</h2><div class="campos">' +
+      '<div><label for="iApodo">Apodo (como aparece en la planilla)</label><input type="text" id="iApodo" maxlength="30"></div>' +
+      '<div class="dos"><div><label for="iNombre">Nombre</label><input type="text" id="iNombre" maxlength="40"></div>' +
+      '<div><label for="iApellido">Apellido</label><input type="text" id="iApellido" maxlength="40"></div></div>' +
+      '<div><label for="iCuit">CUIT o CUIL (opcional)</label><input type="tel" id="iCuit" inputmode="numeric" maxlength="13"></div>' +
+      '<p class="ayuda">Con el CUIT, sus transferencias se cargan solas desde la primera.</p>' +
+      '<button class="primario" id="agregar">Agregar integrante</button></div></div>' +
+    '<p class="actualizado"><button class="link" id="salir">Salir del panel</button></p>';
+
+  const listo = r => { ADMIN = r.admin; DATA = r.datos; pintar(); pintarAdmin(); aviso(r.mensaje); };
+
+  $('guardarPago').onclick = () => {
+    const d = { apodo: $('pIntegrante').value, monto: $('pMonto').value, fecha: $('pFecha').value,
+      imputacion: $('pImputacion').value, medio: $('pMedio').value, nota: $('pNota').value };
+    if (!d.apodo) return aviso('Elegí el integrante.', true);
+    if (!(Number(d.monto) > 0)) return aviso('Revisá el monto.', true);
+    servidor('adminCargarPago', [pin, d], listo, $('guardarPago'));
+  };
+  document.querySelectorAll('[data-asignar]').forEach(b => b.onclick = () => {
+    const sel = document.querySelector('select[data-op="' + b.dataset.asignar + '"]');
+    if (!sel || !sel.value) return aviso('Elegí de quién es la transferencia.', true);
+    servidor('adminAsignar', [pin, b.dataset.asignar, sel.value], listo, b);
+  });
+  $('agregar').onclick = () => {
+    const d = { apodo: $('iApodo').value, nombre: $('iNombre').value, apellido: $('iApellido').value, cuit: $('iCuit').value };
+    if (!d.apodo.trim()) return aviso('Escribí el apodo.', true);
+    servidor('adminAgregarIntegrante', [pin, d], listo, $('agregar'));
+  };
+  $('salir').onclick = () => { olvidarPin(); pintarLogin(); mostrar('inicio'); };
+}
+
+$('abrirAdmin').onclick = () => {
+  mostrar('admin');
+  if (ADMIN) pintarAdmin();
+  else if (pin) {
+    $('s-admin').innerHTML = '<div class="card"><div class="vacio">Entrando…</div></div>';
+    servidor('adminEntrar', [pin], r => { ADMIN = r; pintarAdmin(); });
+  } else pintarLogin();
+};
+
+pintar();
 </script>
 </body>
 </html>

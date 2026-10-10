@@ -47,6 +47,7 @@ const MAX_CUOTAS_REVISAR = 6;   // ingresos no reconocidos de más de 6 cuotas n
 const MONTO_MINIMO_REVISAR = 1000;
 const TOLERANCIA_CANCHA = 1.10; // admite hasta 10% de recargo por mora
 const NOTA_AUTO = 'Cargado automáticamente desde Mercado Pago';
+const COLOR_MANUAL = '#0000FF';
 const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio',
   'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
 
@@ -60,7 +61,18 @@ function onOpen() {
     .addItem('Guardar clave de Mercado Pago', 'guardarClave')
     .addItem('Activar sincronización cada 30 minutos', 'activarSincronizacion')
     .addItem('Desactivar sincronización automática', 'desactivarSincronizacion')
+    .addSeparator()
+    .addItem('Definir PIN del panel de administrador', 'definirPin')
     .addToUi();
+}
+
+/**
+ * Corta si la función no se llamó desde el menú de la planilla. Las funciones
+ * públicas también se pueden invocar desde la app web: así nadie puede, por
+ * ejemplo, desactivar la sincronización desde afuera.
+ */
+function soloDesdePlanilla_() {
+  SpreadsheetApp.getUi(); // fuera de la planilla, getUi() da error y corta la función
 }
 
 /** Guarda el Access Token en tus propiedades de usuario: otros editores no lo ven. */
@@ -79,18 +91,21 @@ function guardarClave() {
 }
 
 function activarSincronizacion() {
+  soloDesdePlanilla_();
   desactivarSincronizacion();
   ScriptApp.newTrigger('sincronizar').timeBased().everyMinutes(30).create();
   aviso_('Listo: la planilla se va a sincronizar con Mercado Pago cada 30 minutos.');
 }
 
 function desactivarSincronizacion() {
+  soloDesdePlanilla_();
   ScriptApp.getProjectTriggers()
     .filter(t => t.getHandlerFunction() === 'sincronizar')
     .forEach(t => ScriptApp.deleteTrigger(t));
 }
 
 function sincronizarAhora() {
+  soloDesdePlanilla_();
   const texto = sincronizar();
   aviso_(texto || 'Ya hay una sincronización en curso. Probá de nuevo en un minuto.');
 }
@@ -373,6 +388,7 @@ function costoCancha_(costos, fecha) {
 
 /** Muestra los últimos ingresos y si cada uno se reconoce o ya está en la planilla. */
 function probarConexion() {
+  soloDesdePlanilla_();
   const ss = SpreadsheetApp.getActive();
   const yo = miUsuario_();
   const miId = String(yo.id);
@@ -520,18 +536,35 @@ function registroProcesados_(ss) {
 function leerIntegrantes_(h) {
   const porCuit = {};
   const porIdMp = {};
+  leerMiembros_(h).forEach(m => {
+    m.cuits.forEach(c => { porCuit[c] = m; });
+    m.ids.forEach(id => { porIdMp[id] = m; });
+  });
+  return { porCuit, porIdMp };
+}
+
+/**
+ * Integrantes con sus CUIT e ID de Mercado Pago. Una celda puede tener varios,
+ * separados por coma (por ejemplo, alguien que paga desde dos cuentas).
+ */
+function leerMiembros_(h) {
   if (h.getMaxColumns() < COL_INT.TOTAL) h.insertColumnsAfter(h.getMaxColumns(), COL_INT.TOTAL - h.getMaxColumns());
   const n = h.getLastRow() - 1;
-  if (n < 1) return { porCuit, porIdMp };
+  if (n < 1) return [];
+  const lista = [];
   h.getRange(2, 1, n, COL_INT.TOTAL).getValues().forEach((f, i) => {
     const apodo = String(f[COL_INT.APODO - 1]).trim();
     if (!apodo) return;
-    const m = { apodo: apodo, fila: i + 2, idMp: normalizarOp_(f[COL_INT.ID_MP - 1]) };
-    const cuit = soloDigitos_(f[COL_INT.CUIT - 1]);
-    if (cuit) porCuit[cuit] = m;
-    if (m.idMp) porIdMp[m.idMp] = m;
+    const ids = listaDe_(f[COL_INT.ID_MP - 1]);
+    lista.push({ apodo: apodo, fila: i + 2, cuits: listaDe_(f[COL_INT.CUIT - 1]), ids: ids, idMp: ids[0] || '' });
   });
-  return { porCuit, porIdMp };
+  return lista;
+}
+
+/** "20-29621474-5, 27123456789" → ['20296214745', '27123456789'] */
+function listaDe_(v) {
+  if (typeof v === 'number') return [v.toFixed(0)];
+  return String(v == null ? '' : v).split(/[,;\/\n]+/).map(soloDigitos_).filter(Boolean);
 }
 
 /** N° de operación de una columna (desde la fila 2), normalizados. */
@@ -587,15 +620,18 @@ function claveDia_(nombre, monto, fecha) {
   return nombre + '|' + Math.round(monto) + '|' + Utilities.formatDate(fecha, ZONA, 'yyyy-MM-dd');
 }
 
-/** Agrega filas al final (agranda la hoja si hace falta); las columnas indicadas quedan como texto. */
-function agregarFilas_(h, filas, ancho, columnasTexto) {
+/**
+ * Agrega filas al final (agranda la hoja si hace falta); las columnas indicadas quedan como texto.
+ * Negro: cargado por la automatización. Azul (COLOR_MANUAL): cargado a mano.
+ */
+function agregarFilas_(h, filas, ancho, columnasTexto, color) {
   if (!filas.length) return;
   const inicio = h.getLastRow() + 1;
   const faltan = inicio + filas.length - 1 - h.getMaxRows();
   if (faltan > 0) h.insertRowsAfter(h.getMaxRows(), faltan);
   columnasTexto.forEach(c => h.getRange(inicio, c, filas.length, 1).setNumberFormat('@'));
   h.getRange(inicio, 1, filas.length, ancho).setValues(filas)
-    .setFontColor('#000000').setFontFamily('Arial');
+    .setFontColor(color || '#000000').setFontFamily('Arial');
 }
 
 // -------------------------------------------------------------- utilidades

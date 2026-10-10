@@ -532,6 +532,192 @@ section('W1 app del equipo: datos sin información personal');
   check('sync clears the app cache', !(w.cache && w.cache.datosApp) && w.cacheRemoved > 0);
 }
 
+// ============================================================ panel del administrador
+function addAppSheets(w, apodos) {
+  w.addSheet('Resumen', [
+    ['Caja Hockey', ''], ['', ''],
+    ['Mes actual', { value: art('2026-10-01 00:00'), fmt: 'mmm yyyy' }],
+    ['', ''], ['', ''],
+    ['Integrantes con el mes pago', 3], ['Integrantes en total', 5],
+    ['Integrantes necesarios para cubrir la cancha', 8], ['Recaudado para la cancha ($)', 45000],
+    ['Costo de la cancha ($)', 120000], ['Faltan ($)', 75000], ['Cobertura', 0.375],
+    ['Vence el', { value: art('2026-10-10 00:00'), fmt: 'dd/mm/yyyy' }], ['Cancha del mes pagada', 'Sí'],
+    ['', ''], ['', ''], ['', ''], ['', ''], ['', ''], ['', ''],
+    ['Saldo en caja ($)', 96000], ['Cuotas pagadas por adelantado ($)', 15000], ['Disponible para equipamiento ($)', 81000],
+    ['', ''], ['', ''], ['Integrantes con deuda', 2], ['Deuda total, incluido el mes actual ($)', 30000],
+  ]);
+  const meses = [];
+  for (let i = 0; i < 12; i++) meses.push({ value: art(`${2026 + Math.floor((9 + i) / 12)}-${String((9 + i) % 12 + 1).padStart(2, '0')}-01 00:00`), fmt: 'mmm yy' });
+  const rows = [['Integrante', 'Pagado', 'Meses', 'A cuenta', 'Debe', 'Adelantado', 'Pagado hasta'].concat(meses)];
+  apodos.forEach(a => rows.push([a, 0, 0, 0, 15000, 0, '-'].concat(Array(12).fill(''))));
+  rows.push(['Totales', 0, '', '', 0, 0, '']);
+  rows.push(['', '', '', '', '', '', 'Pagaron', 0]);
+  const c = w.addSheet('Cuotas', rows);
+  // una fórmula por fila de integrante, para verificar que se copia a la fila nueva
+  apodos.forEach((a, i) => c.getRange(i + 2, 3).setValue('=INT(R[0]C[-1]/15000)'));
+  w.sheet('Config').getRange('B7').setValue('luciopepi');
+  w.sheet('Config').getRange('B28').setValue(art('2026-10-01 00:00'));
+}
+const APODOS = ['Juancho', 'Flaco', 'Tano', 'Colo', 'Dieguito'];
+function uiPin(pin) {
+  return {
+    ButtonSet: { OK_CANCEL: 'OK_CANCEL' }, Button: { OK: 'OK' }, alerts: [],
+    prompt() { return { getSelectedButton: () => 'OK', getResponseText: () => pin }; },
+    alert(t) { this.alerts.push(t); },
+  };
+}
+function intentar(fn) { try { return { r: fn() }; } catch (e) { return { e }; } }
+const PIN = '482915';
+
+section('A1 PIN del administrador');
+{
+  const ui = uiPin(PIN);
+  const w = newWorld(basePayments(), { ui });
+  addAppSheets(w, APODOS);
+  let x = intentar(() => w.ctx.adminEntrar(PIN));
+  check('sin PIN definido: pide definirlo', x.e && /Todavía no hay PIN/.test(x.e.message), x.e && x.e.message);
+  w.run('definirPin');
+  check('PIN guardado como hash con sal', /^[0-9a-f-]{36}:[A-Za-z0-9+/=]{44}$/.test(w.scriptProps.ADMIN_PIN || '') && !String(w.scriptProps.ADMIN_PIN).includes(PIN), w.scriptProps.ADMIN_PIN);
+  x = intentar(() => w.ctx.adminEntrar(PIN));
+  check('PIN correcto entra y devuelve integrantes', !x.e && x.r.integrantes.length === 5 && x.r.cuota === 15000, x.e && x.e.message);
+  for (let i = 0; i < 5; i++) x = intentar(() => w.ctx.adminEntrar('000000'));
+  check('PIN incorrecto', x.e && /PIN incorrecto/.test(x.e.message), x.e && x.e.message);
+  x = intentar(() => w.ctx.adminEntrar(PIN));
+  check('después de 5 errores bloquea aunque el PIN sea correcto', x.e && /Demasiados intentos/.test(x.e.message), x.e && x.e.message);
+  x = intentar(() => w.ctx.adminCargarPago(PIN, { apodo: 'Colo', monto: 15000, fecha: '2026-10-10', imputacion: 'Cuota', medio: 'Efectivo' }));
+  check('el bloqueo también frena las escrituras', x.e && /Demasiados intentos/.test(x.e.message));
+  const ui2 = uiPin('12a');
+  const w2 = newWorld(basePayments(), { ui: ui2 });
+  w2.run('definirPin');
+  check('PIN con letras no se guarda', !w2.scriptProps.ADMIN_PIN && /6 a 12 números/.test(ui2.alerts.join(' ')));
+}
+
+section('A2 cargar pago en efectivo');
+{
+  const w = newWorld(basePayments(), { ui: uiPin(PIN) });
+  addAppSheets(w, APODOS);
+  w.run('definirPin');
+  w.setNow(nowIso('2026-10-10 20:00'));
+  const antes = rowsOf(w, 'Pagos').length;
+  let x = intentar(() => w.ctx.adminCargarPago(PIN, { apodo: 'Colo', monto: '15000', fecha: '2026-10-10', imputacion: 'Cuota', medio: 'Efectivo', nota: '=HYPERLINK("x")' }));
+  check('carga sin error', !x.e, x.e && x.e.stack);
+  const filas = rowsOf(w, 'Pagos');
+  const ult = filas[filas.length - 1] || [];
+  check('agrega una fila en Pagos', filas.length === antes + 1, filas.length);
+  check('fila con integrante, monto, imputación y medio', /^10\/10\/2026( 00:00:00)?$/.test(ult[0]) && ult[1] === 'Colo' && ult[2] === '15000' && ult[3] === 'Cuota' && ult[4] === 'Efectivo', JSON.stringify(ult));
+  check('nota marcada como cargada desde la app y sin fórmula', /^Cargado desde la app\. =HYPERLINK/.test(ult[9]) && w.formulas.filter(f => !/^Cuotas!/.test(f)).length === 0, ult[9] + ' | ' + w.formulas.join(','));
+  check('queda en azul (cargado a mano)', w.sheet('Pagos').raw(antes + 2, 2).color === '#0000FF');
+  check('devuelve mensaje y datos de la app', x.r && /Colo/.test(x.r.mensaje) && x.r.datos && x.r.datos.cancha && x.r.admin);
+  x = intentar(() => w.ctx.adminCargarPago(PIN, { apodo: 'Colo', monto: '15000', fecha: '2026-10-10', imputacion: 'Cuota', medio: 'Efectivo' }));
+  check('doble toque: no carga dos veces', x.e && /ya se cargó/.test(x.e.message) && rowsOf(w, 'Pagos').length === antes + 1);
+  const malos = [
+    [{ apodo: 'Nadie', monto: 15000, fecha: '2026-10-10', imputacion: 'Cuota', medio: 'Efectivo' }, /integrante/],
+    [{ apodo: 'Tano', monto: 0, fecha: '2026-10-10', imputacion: 'Cuota', medio: 'Efectivo' }, /monto/],
+    [{ apodo: 'Tano', monto: 15000, fecha: '2026-10-12', imputacion: 'Cuota', medio: 'Efectivo' }, /fecha/],
+    [{ apodo: 'Tano', monto: 15000, fecha: '2026-02-31', imputacion: 'Cuota', medio: 'Efectivo' }, /fecha/],
+    [{ apodo: 'Tano', monto: 15000, fecha: '2026-10-09', imputacion: 'Revisar', medio: 'Efectivo' }, /imputación/],
+    [{ apodo: 'Tano', monto: 15000, fecha: '2026-10-09', imputacion: 'Cuota', medio: 'Cheque' }, /medio/],
+  ];
+  const fallan = malos.every(([d, re]) => { const y = intentar(() => w.ctx.adminCargarPago(PIN, d)); return y.e && re.test(y.e.message); });
+  check('valida integrante, monto, fecha, imputación y medio', fallan && rowsOf(w, 'Pagos').length === antes + 1);
+  x = intentar(() => w.ctx.adminCargarPago('999999', { apodo: 'Tano', monto: 15000, fecha: '2026-10-09', imputacion: 'Cuota', medio: 'Efectivo' }));
+  check('sin PIN correcto no escribe', x.e && /PIN incorrecto/.test(x.e.message) && rowsOf(w, 'Pagos').length === antes + 1);
+}
+
+section('A3 asignar transferencias de Por revisar');
+{
+  const RICARDO = 444000555;
+  const w = newWorld(basePayments().concat([
+    pay({ id: 7101, created: '2026-10-10 10:00', payerId: RICARDO, cuit: '20111222333', amount: 15000, first: 'Ricardo', last: 'Pereyra' }),
+    pay({ id: 7102, created: '2026-10-10 11:00', payerId: RICARDO, cuit: '20111222333', amount: 30000, first: 'Ricardo', last: 'Pereyra' }),
+    pay({ id: 7103, created: '2026-10-10 12:00', payerId: ME, amount: 15000, ptype: 'bank_transfer', pmethod: 'cvu', bankName: 'Fulano Banco' }),
+  ]), { ui: uiPin(PIN) });
+  addAppSheets(w, APODOS);
+  w.run('definirPin');
+  let err = sync(w, '2026-10-10 15:00');
+  check('sync sin error', !err, err && err.stack);
+  check('quedan 3 en Por revisar', revisar(w).length === 3, JSON.stringify(revisar(w)));
+  let x = intentar(() => w.ctx.adminEntrar(PIN));
+  check('el panel lista las 3 sin CUIT ni ID', !x.e && x.r.porRevisar.length === 3 && !JSON.stringify(x.r).includes('20111222333') && !JSON.stringify(x.r).includes(String(RICARDO)), x.e ? x.e.message : JSON.stringify(x.r && x.r.porRevisar));
+  x = intentar(() => w.ctx.adminAsignar(PIN, '7101', 'Colo'));
+  check('asigna sin error', !x.e, x.e && x.e.stack);
+  const p = rowsOf(w, 'Pagos');
+  const deColo = p.filter(r => r[1] === 'Colo' && (r[8] === '7101' || r[8] === '7102'));
+  check('pasa las 2 transferencias de esa cuenta a Pagos', deColo.length === 2, JSON.stringify(deColo));
+  check('la de $30.000 queda como Cuota (múltiplo)', deColo.some(r => r[8] === '7102' && r[3] === 'Cuota'));
+  check('se borran de Por revisar; queda la del banco', revisar(w).length === 1 && revisar(w)[0][7] === '7103', JSON.stringify(revisar(w)));
+  const colo = w.sheet('Integrantes').rows(2).find(r => r[1] === 'Colo');
+  check('guarda CUIT e ID de Mercado Pago en Integrantes', colo[5] === '20111222333' && colo[9] === String(RICARDO), JSON.stringify(colo));
+  check('mensaje avisa que los próximos se cargan solos', /se cargan solos/.test(x.r.mensaje), x.r && x.r.mensaje);
+  // la próxima transferencia de esa cuenta entra sola
+  w.payments.push(pay({ id: 7104, created: '2026-10-11 09:00', payerId: RICARDO, cuit: '20111222333', amount: 15000, first: 'Ricardo', last: 'Pereyra' }));
+  err = sync(w, '2026-10-11 10:00');
+  check('la siguiente transferencia de Ricardo se carga sola a Colo', !err && rowsOf(w, 'Pagos').some(r => r[8] === '7104' && r[1] === 'Colo'), err && err.stack);
+  // transferencia de banco: se asigna pero no aprende nada
+  x = intentar(() => w.ctx.adminAsignar(PIN, '7103', 'Tano'));
+  check('banco: se asigna y avisa que las próximas también van a Por revisar', !x.e && rowsOf(w, 'Pagos').some(r => r[8] === '7103' && r[1] === 'Tano' && r[4] === 'Transferencia bancaria') && /bancos/.test(x.r.mensaje), x.e ? x.e.message : x.r.mensaje);
+  check('Por revisar queda vacío', revisar(w).length === 0);
+  x = intentar(() => w.ctx.adminAsignar(PIN, '7103', 'Tano'));
+  check('asignar una que ya no está da error claro', x.e && /ya no está/.test(x.e.message));
+  check('no se crearon fórmulas', w.formulas.filter(f => !/^Cuotas!/.test(f)).length === 0, w.formulas.join(' | '));
+}
+
+section('A4 un CUIT que ya es de otro integrante no se pisa');
+{
+  const w = newWorld(basePayments().concat([
+    pay({ id: 7201, created: '2026-10-10 10:00', payerId: 444000777, cuit: '27999888777', amount: 15000, first: 'Esposa', last: 'De Tano' }),
+  ]), { ui: uiPin(PIN) });
+  addAppSheets(w, APODOS);
+  w.run('definirPin');
+  w.sheet('Integrantes').getRange('F5').setValue('27999888777, 20999000111'); // Colo: dos cuentas
+  let err = sync(w, '2026-10-10 15:00');
+  check('varios CUIT en una celda: reconoce el segundo', !err && rowsOf(w, 'Pagos').some(r => r[8] === '7201' && r[1] === 'Colo'), err ? err.stack : JSON.stringify(revisar(w)));
+  w.payments.push(pay({ id: 7202, created: '2026-10-10 16:00', payerId: 444000888, cuit: '20999000111', amount: 15000 }));
+  w.payments.push(pay({ id: 7203, created: '2026-10-10 16:30', payerId: 444000999, cuit: '27000111222', amount: 15000 }));
+  w.sheet('Integrantes').getRange('F5').setValue('27999888777');
+  err = sync(w, '2026-10-10 17:00');
+  w.sheet('Integrantes').getRange('F4').setValue('27000111222'); // Tano ya tiene ese CUIT
+  const x = intentar(() => w.ctx.adminAsignar(PIN, '7203', 'Juancho'));
+  const juancho = w.sheet('Integrantes').rows(2).find(r => r[1] === 'Juancho');
+  check('asigna, pero no le copia a Juancho un CUIT que es de Tano', !x.e && rowsOf(w, 'Pagos').some(r => r[8] === '7203' && r[1] === 'Juancho') && !String(juancho[5]).includes('27000111222'), x.e ? x.e.message : JSON.stringify(juancho));
+}
+
+section('A5 agregar integrante');
+{
+  const w = newWorld(basePayments(), { ui: uiPin(PIN) });
+  addAppSheets(w, APODOS);
+  w.run('definirPin');
+  let x = intentar(() => w.ctx.adminAgregarIntegrante(PIN, { apodo: 'Nico', nombre: 'Nicolás', apellido: 'Paz', cuit: '20-33444555-6' }));
+  check('agrega sin error', !x.e, x.e && x.e.stack);
+  const ints = w.sheet('Integrantes').rows(2);
+  const nico = ints[ints.length - 1];
+  check('nueva fila al final de Integrantes', nico[1] === 'Nico' && nico[2] === 'Nicolás' && nico[5] === '20334445556' && nico[8] === 'No', JSON.stringify(nico));
+  const cuo = w.sheet('Cuotas');
+  check('Cuotas: fila nueva antes de Totales', cuo.display(8, 1) === 'Totales' && cuo.raw(7, 3).formula === '=INT(R[0]C[-1]/15000)', cuo.display(8, 1) + ' | ' + JSON.stringify(cuo.raw(7, 3)));
+  check('mensaje dice que se carga solo con CUIT', /se van a cargar solas/.test(x.r.mensaje));
+  const malos = [
+    [{ apodo: 'nico' }, /Ya hay/],
+    [{ apodo: 'Totales' }, /Ya hay/],
+    [{ apodo: '=1+1' }, /apodo/],
+    [{ apodo: 'Pepe', cuit: '123' }, /11 números/],
+    [{ apodo: 'Pepe', cuit: '20334445556' }, /Nico/],
+  ];
+  check('valida apodo repetido, inválido y CUIT', malos.every(([d, re]) => { const y = intentar(() => w.ctx.adminAgregarIntegrante(PIN, d)); return y.e && re.test(y.e.message); }));
+  w.sheet('Integrantes').getRange('B9').setValue('Suelto');
+  x = intentar(() => w.ctx.adminAgregarIntegrante(PIN, { apodo: 'Otro' }));
+  check('si Cuotas e Integrantes no están alineadas, no toca nada', x.e && /alineadas/.test(x.e.message) && w.sheet('Cuotas').display(8, 1) === 'Totales');
+}
+
+section('A6 funciones del menú no se pueden usar desde la app');
+{
+  const w = newWorld(basePayments());
+  w.triggers.push({ h: 'sincronizar' });
+  const intentos = ['desactivarSincronizacion', 'activarSincronizacion', 'sincronizarAhora', 'probarConexion', 'definirPin', 'guardarClave']
+    .map(f => intentar(() => w.ctx[f]()));
+  check('sin la planilla abierta, todas cortan', intentos.every(x => x.e && /getUi/.test(x.e.message)), intentos.map(x => x.e && x.e.message).join(' | '));
+  check('el disparador sigue activo', w.triggers.length === 1);
+}
+
 // ------------------------------------------------------------ summary
 const fails = results.filter(r => !r.ok);
 console.log('\n================ SUMMARY ================');
