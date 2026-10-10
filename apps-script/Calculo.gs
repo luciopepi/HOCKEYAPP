@@ -250,13 +250,13 @@ function calcularEstado_(d) {
     let cuotasDebe = 0;
     const estados = cargos.map(({ mes, c, acumulado: acum }) => {
       const medio = medioAlta && mes.getTime() === mesAlta.getTime();
-      if (c === 0) return { e: 'nojuega', medio: false, falta: 0 };
-      if (pagado >= acum) { hasta = mes; return { e: 'pagado', medio, falta: 0 }; }
+      if (c === 0) return { e: 'nojuega', medio: false, falta: 0, c: 0 };
+      if (pagado >= acum) { hasta = mes; return { e: 'pagado', medio, falta: 0, c }; }
       if (mes <= mesActual) {
         cuotasDebe++;
-        return { e: 'debe', medio, falta: Math.min(c, acum - pagado) };
+        return { e: 'debe', medio, falta: Math.min(c, acum - pagado), c };
       }
-      return { e: 'sinvencer', medio, falta: 0 };
+      return { e: 'sinvencer', medio, falta: 0, c };
     });
 
     return {
@@ -267,7 +267,8 @@ function calcularEstado_(d) {
       activo: !ultimo || ultimo >= mesActual,
       pagado: pagado,
       deuda: Math.max(0, acumuladoActual - pagado),
-      adelantado: m.auto ? 0 : Math.max(0, pagado - acumuladoActual),
+      // Con baja, lo pagado de más que ya no se va a usar queda libre en la caja (decisión 11).
+      adelantado: m.auto ? 0 : Math.max(0, Math.min(pagado, ultimo ? acumulado : Infinity) - acumuladoActual),
       cuotasDebe: cuotasDebe,
       hasta: hasta,
       estados: estados,
@@ -293,7 +294,7 @@ function calcularEstado_(d) {
       if (meses[i] > mesActual || s.e === 'nojuega') return;
       const k = claveMes_(meses[i]);
       porMes[k] = porMes[k] || { mes: meses[i], cuotas: 0, otros: 0 };
-      porMes[k].cuotas += cuotaDe(meses[i]);
+      porMes[k].cuotas += s.c;
     });
   });
 
@@ -379,12 +380,15 @@ function escribirCuotas_(ss, est) {
   filas.push(vacia.slice());
   filas.push(resumen('Pagaron', pagaron));
 
-  const filasAntes = Math.max(h.getLastRow(), 1);
-  h.getRange(1, 1, Math.max(filasAntes, filas.length + 1), h.getMaxColumns()).clearContent();
-  if (h.getMaxRows() < filas.length) h.insertRowsAfter(h.getMaxRows(), filas.length - h.getMaxRows());
+  if (h.getMaxRows() < filas.length + 1) h.insertRowsAfter(h.getMaxRows(), filas.length + 1 - h.getMaxRows());
+  const alto = Math.max(h.getLastRow(), filas.length + 1);
+  h.getRange(1, 1, alto, h.getMaxColumns()).clearContent().clearNote();
+  // Formatos antes de escribir: los meses ("oct 26") y "Pagado hasta" son texto, no fechas.
+  h.getRange(1, 1, alto, h.getMaxColumns()).setNumberFormat('@');
+  h.getRange(2, 2, alto - 1, 3).setNumberFormat('"$"#,##0;("$"#,##0);"-"');
+  h.getRange(filas.length, 6, 1, est.meses.length).setNumberFormat('0');
   h.getRange(1, 1, filas.length, ancho).setValues(filas);
   h.getRange(1, 1, 1, ancho).setFontWeight('bold');
-  h.getRange(2, 2, est.integrantes.length || 1, 3).setNumberFormat('"$"#,##0;("$"#,##0);"-"');
   h.setFrozenRows(1);
 
   const rango = h.getRange(2, 6, Math.max(est.integrantes.length, 1), est.meses.length);
@@ -431,9 +435,14 @@ function escribirResumen_(ss, est, datos) {
     ['Pagos por clasificar (no suman)', est.porClasificar],
   ];
   const antes = Math.max(h.getLastRow(), filas.length);
-  h.getRange(1, 1, antes, 2).clearContent();
-  h.getRange(1, 1, filas.length, 2).setValues(filas);
+  const ancho = Math.min(Math.max(h.getMaxColumns(), 3), 6);
+  h.getRange(1, 1, antes, ancho).clearContent().clearNote();
+  // Cada fila con su formato: la hoja vieja tenía otros formatos en otras filas.
   filas.forEach((f, i) => {
-    if (/\(\$\)$/.test(f[0])) h.getRange(i + 1, 2).setNumberFormat('"$"#,##0;-"$"#,##0;"-"');
+    const celda = h.getRange(i + 1, 2);
+    if (/\(\$\)$/.test(f[0])) celda.setNumberFormat('"$"#,##0;-"$"#,##0;"-"');
+    else if (typeof f[1] === 'number') celda.setNumberFormat('0');
+    else celda.setNumberFormat('@');
   });
+  h.getRange(1, 1, filas.length, 2).setValues(filas);
 }

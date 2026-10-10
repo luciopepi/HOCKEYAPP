@@ -365,7 +365,10 @@ function cabeceraAdmin(titulo, sub, volverA) {
     '</button><div><div class="titulo-h">' + esc(titulo) + '</div>' + (sub ? '<div class="sub">' + esc(sub) + '</div>' : '') + '</div></div>' +
     (volverA === null && ADMIN ? '<button class="volver" id="salir" style="width:auto;padding:0 12px;font:inherit;font-size:14px">Salir</button>' : '') + '</div>';
   $('volver').onclick = () => (volverA ? ir(volverA) : mostrar('inicio'));
-  if ($('salir')) $('salir').onclick = () => { olvidarPin(); mostrar('inicio'); toast('Saliste del panel.'); };
+  if ($('salir')) $('salir').onclick = () => {
+    if (/^t:/.test(pin) && window.google && google.script) google.script.run.adminSalir(pin);
+    olvidarPin(); mostrar('inicio'); toast('Saliste del panel.');
+  };
 }
 
 function login(error) {
@@ -379,9 +382,11 @@ function login(error) {
   const entrar = () => {
     const p = $('pin').value.trim();
     if (!p) return;
-    servidor('adminEntrar', [p], r => {
-      pin = p; ADMIN = r;
-      if ($('recordar') && $('recordar').checked) { try { localStorage.setItem(CLAVE_PIN, p); } catch (e) {} }
+    const recordar = !!($('recordar') && $('recordar').checked);
+    servidor('adminEntrar', [p, recordar], r => {
+      ADMIN = r;
+      pin = r.token || p;
+      if (r.token) { try { localStorage.setItem(CLAVE_PIN, r.token); } catch (e) {} }
       ir('inicio');
     }, $('entrar'));
   };
@@ -414,6 +419,8 @@ function opciones(lista, elegido, vacio) {
     }).join('');
 }
 const apodos = () => ADMIN.integrantes.filter(m => !m.baja).map(m => m.apodo);
+// Para cargar pagos también cuentan los que se dieron de baja (pueden saldar su deuda).
+const quienes = () => ADMIN.integrantes.map(m => ({ clave: m.apodo, texto: m.apodo + (m.baja ? ' (baja)' : '') }));
 
 function vInicio() {
   const a = ADMIN;
@@ -438,7 +445,7 @@ function vRevisar() {
   cabeceraAdmin('Para revisar', '', 'inicio');
   const sinAsignar = a.porRevisar.length ? a.porRevisar.map((t, i) => '<div class="pendiente"><div class="arriba"><span class="nombre">' + esc(t.nombre || 'Sin nombre') +
     '</span><span class="num" style="font-size:20px">' + pesos(t.monto) + '</span></div><span class="det">' + esc(t.fecha) + ' · ' + esc(t.medio) + ' · ' + esc(t.motivo) + '</span>' +
-    '<div class="linea-sel"><label class="solo-lector" for="asig' + i + '">Integrante</label><select id="asig' + i + '">' + opciones(apodos(), '', '¿De quién es?') +
+    '<div class="linea-sel"><label class="solo-lector" for="asig' + i + '">Integrante</label><select id="asig' + i + '">' + opciones(quienes(), '', '¿De quién es?') +
     '</select><button class="sec" data-asignar="' + i + '">Asignar</button></div><button class="link gris" style="align-self:flex-start" data-descartar="' + i + '">No es de la caja</button></div>').join('')
     : '<div class="vacio">No hay transferencias sin asignar.</div>';
   const clasificar = a.porClasificar.length ? a.porClasificar.map((p, i) => '<div class="pendiente"><div class="arriba"><span class="nombre">' + esc(p.apodo) +
@@ -479,7 +486,7 @@ function vEfectivo() {
   cabeceraAdmin('Pago en efectivo', '', 'inicio');
   estadoForm = { tipo: 'Cuota' };
   $('s-admin').innerHTML = '<div class="card">' +
-    '<div class="campo"><label for="eQuien">Integrante</label><select id="eQuien">' + opciones(apodos(), '', 'Elegí') + '</select><span class="det" id="eDeuda" style="font-weight:600;margin-top:6px"></span></div>' +
+    '<div class="campo"><label for="eQuien">Integrante</label><select id="eQuien">' + opciones(quienes(), '', 'Elegí') + '</select><span class="det" id="eDeuda" style="font-weight:600;margin-top:6px"></span></div>' +
     '<div class="dos"><div class="campo"><label for="eMonto">Monto ($)</label><input type="number" id="eMonto" inputmode="numeric" min="1" step="1" value="' + esc(a.cuotaMes || '') + '"></div>' +
     '<div class="campo"><label for="eFecha">Fecha</label><input type="date" id="eFecha" value="' + esc(a.hoy) + '" max="' + esc(a.hoy) + '"></div></div>' +
     '<div><span class="lbl">Es por</span><div class="opciones">' + botonesOpcion('tipo', [['Cuota', 'Cuota'], ['Otro de la caja', 'Otra cosa de la caja'], ['No es de la caja', 'No es de la caja']], 'Cuota') + '</div></div>' +

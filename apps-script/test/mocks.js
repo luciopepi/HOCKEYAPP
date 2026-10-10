@@ -218,6 +218,7 @@ class Range {
   setNote(n) { this.forEachCell(x => { x.note = n; }); return this; }
   getNote() { const x = this.sheet.cell(this.r, this.c); return (x && x.note) || ''; }
   clearContent() { this.forEachCell(x => { x.v = ''; delete x.formula; delete x.formulaValue; }); return this; }
+  clearNote() { this.forEachCell(x => { delete x.note; }); return this; }
   setDataValidation(rule) { this.forEachCell(x => { x.validation = rule; }); return this; }
   setFontColor(c) { this.forEachCell(x => { x.color = c; }); return this; }
   setFontFamily(f) { this.forEachCell(x => { x.font = f; }); return this; }
@@ -341,6 +342,8 @@ function driveFake(world, url, params) {
     return resp(200, { id });
   }
   if (method === 'post' && /\/drive\/v3\/files$/.test(url)) { const id = 'carpeta' + (++D.n); D.files[id] = { folder: true }; return resp(200, { id }); }
+  const meta = /\/drive\/v3\/files\/([^/?]+)\?fields/.exec(url);
+  if (meta && method === 'get') return D.files[meta[1]] ? resp(200, { id: meta[1], trashed: !!D.files[meta[1]].trashed }) : resp(404, { error: 'not found' });
   const exp = /\/drive\/v3\/files\/([^/?]+)\/export/.exec(url);
   if (exp) return resp(200, world.ocrTexto || '');
   const del = /\/drive\/v3\/files\/([^/?]+)$/.exec(url);
@@ -393,13 +396,13 @@ function createWorld(opts) {
       getUi: () => { if (opts.ui) return opts.ui; throw new Error('Cannot call SpreadsheetApp.getUi() from this context.'); },
     },
     UrlFetchApp: { fetch: ((mp) => (url, params) => (/googleapis\.com/.test(url) ? driveFake(world, url, params) : mp(url, params)))(makeMP(world, opts.mp || {})) },
-    PropertiesService: { getScriptProperties: () => ({ getProperty: k => (world.scriptProps[k] == null ? null : world.scriptProps[k]), setProperty: (k, v) => { world.scriptProps[k] = String(v); } }), getUserProperties: () => ({ getProperty: k => (k === 'MP_ACCESS_TOKEN' ? world.token : null), setProperty: (k, v) => { world.token = v; } }) },
+    PropertiesService: { getScriptProperties: () => ({ getProperty: k => (world.scriptProps[k] == null ? null : world.scriptProps[k]), setProperty: (k, v) => { world.scriptProps[k] = String(v); }, deleteProperty: k => { delete world.scriptProps[k]; } }), getUserProperties: () => ({ getProperty: k => (k === 'MP_ACCESS_TOKEN' ? world.token : null), setProperty: (k, v) => { world.token = v; } }) },
     CacheService: { getScriptCache: () => ({
       get: k => (world.cache && world.cache[k]) || null,
       put: (k, v) => { (world.cache = world.cache || {})[k] = v; },
       remove: k => { if (world.cache) delete world.cache[k]; world.cacheRemoved = (world.cacheRemoved || 0) + 1; },
     }) },
-    LockService: { getScriptLock: () => ({ tryLock: () => true, waitLock: () => {}, releaseLock: () => {} }) },
+    LockService: { getUserLock: () => ({ tryLock: () => true, waitLock: () => {}, releaseLock: () => {} }), getScriptLock: () => ({ tryLock: () => true, waitLock: () => {}, releaseLock: () => {} }) },
     Utilities: {
       formatDate, sleep: () => { world.sleeps++; },
       getUuid: () => require('crypto').randomUUID(),
@@ -416,7 +419,7 @@ function createWorld(opts) {
       getOAuthToken: () => 'drive-token',
       getService: () => ({ getUrl: () => 'https://script.google.com/macros/s/TEST/exec' }),
       newTrigger: h => { const t = { h }; const b = { timeBased: () => b, everyMinutes: () => b, create: () => { world.triggers.push(t); return t; } }; return b; },
-      getProjectTriggers: () => world.triggers.map(t => ({ getHandlerFunction: () => t.h })),
+      getProjectTriggers: () => world.triggers.map((t, i) => ({ getHandlerFunction: () => t.h, getUniqueId: () => t.uid || 'uid' + i })),
       deleteTrigger: () => {},
     },
   };

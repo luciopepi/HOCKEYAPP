@@ -116,7 +116,7 @@ function snapshot(w) {
 }
 function sync(w, when) {
   w.setNow(nowIso(when));
-  try { w.run('sincronizar'); return null; } catch (e) { return e; }
+  try { w.run('sincronizar_'); return null; } catch (e) { return e; }
 }
 const rowsOf = (w, n) => (w.sheet(n) ? w.sheet(n).rows(2) : []);
 const revisar = w => rowsOf(w, 'Por revisar');
@@ -803,6 +803,100 @@ section('A9 gastos con comprobante');
   check('aparece en la app', x.r && x.r.datos.gastos.some(g => g.concepto === 'Bochas nuevas' && g.monto === 48000));
   x = intentar(() => w.ctx.adminGuardarGasto(PIN, { op: '555100001', tipo: 'Equipamiento', concepto: 'Otra vez' }));
   check('no se carga dos veces', x.e && /ya está cargada/.test(x.e.message));
+}
+
+section('F1 correcciones de la revisión');
+{
+  // baja con adelanto: lo que ya no se usa queda libre en la caja
+  const w = newWorld([]);
+  const D = s => w.mkDate(art(s + ' 00:00').getTime());
+  const base = {
+    inicio: D('2026-10-01'), saldoInicial: 0, hoy: D('2026-11-05'),
+    valores: [{ desde: D('2026-10-01'), cuota: 15000, cancha: 200000 }],
+    miembros: [{ apodo: 'Se va', cuits: [], ids: [], ultimoMes: D('2026-10-01') }, { apodo: 'Sigue', cuits: [], ids: [] }],
+    pagos: [{ fecha: D('2026-10-05'), apodo: 'Se va', monto: 45000, imputacion: 'Cuota' },
+      { fecha: D('2026-10-05'), apodo: 'Sigue', monto: 60000, imputacion: 'Cuota' }],
+    gastos: [],
+  };
+  const e = w.ctx.calcularEstado_(base);
+  const seVa = e.integrantes[0], sigue = e.integrantes[1];
+  check('baja: lo pagado de más no queda como adelanto', seVa.adelantado === 0 && seVa.deuda === 0, JSON.stringify({ a: seVa.adelantado, d: seVa.deuda }));
+  check('activo: el adelanto sigue contando', sigue.adelantado === 30000);
+  check('fondo: incluye lo que dejó el que se fue', e.caja.fondo === 105000 - 30000 - 200000, String(e.caja.fondo));
+
+  // simulación: todos los meses adelantados desde "vigente desde"
+  const wa = mundoAdmin(basePayments().concat([
+    pay({ id: 7601, created: '2026-10-10 10:00', payerId: 444000001, cuit: '20301112223', amount: 30000 }),
+  ]));
+  sync(wa, '2026-10-10 15:00');
+  const x = intentar(() => wa.ctx.adminSimularValor(PIN, { tipo: 'cuota', monto: '18000', desde: '2026-12' }));
+  const j = x.r && x.r.afectados.find(a => a.apodo === 'Juancho');
+  check('Juancho pagó hasta febrero: debe dic, ene y feb a $3.000', j && j.diferencia === 9000, JSON.stringify(x.r ? x.r.afectados : x.e.message));
+
+  // público: sin CVU en el destinatario
+  const wp = newWorld(basePayments());
+  wp.setNow(nowIso('2026-10-10 20:00'));
+  wp.sheet('Gastos').getRange(2, 6).setValue('Club Social y Deportivo Aberastain (CVU 0000003100086841610242)');
+  const dp = wp.run('datosApp_');
+  check('público: destinatario sin CVU', dp.gastos[0].destinatario === 'Club Social y Deportivo Aberastain', dp.gastos[0].destinatario);
+  check('sinCuentas_: CBU, alias y números largos', wp.ctx.sinCuentas_('Deportes Sur CBU 0720179688000037080240 alias pago.sur') === 'Deportes Sur', wp.ctx.sinCuentas_('Deportes Sur CBU 0720179688000037080240 alias pago.sur'));
+
+  // sincronizar desde la app: no corre
+  const ws = newWorld(basePayments());
+  ws.setNow(nowIso('2026-10-12 15:00'));
+  ws.triggers.push({ h: 'sincronizar', uid: 'disparador-real' });
+  let y = intentar(() => ws.ctx.sincronizar());
+  check('sin disparador: no sincroniza', y.e && /corre sola/.test(y.e.message) && !ws.fetches.length);
+  y = intentar(() => ws.ctx.sincronizar({ triggerUid: 'inventado' }));
+  check('con un disparador inventado: no sincroniza', y.e && !ws.fetches.length);
+  y = intentar(() => ws.ctx.sincronizar({ triggerUid: 'disparador-real' }));
+  check('con el disparador del proyecto: sincroniza', !y.e && ws.fetches.length > 0, y.e && y.e.message);
+}
+
+section('F2 celular recordado: el PIN bloqueado no deja afuera al administrador');
+{
+  const w = mundoAdmin();
+  let x = intentar(() => w.ctx.adminEntrar(PIN, true));
+  const token = x.r && x.r.token;
+  check('entrar recordando devuelve un código, no el PIN', /^t:[0-9a-f]{64}$/.test(token || '') && token.indexOf(PIN) === -1, token);
+  check('se guarda solo el hash del código', !String(w.scriptProps.ADMIN_CELULARES).includes(token.slice(2)));
+  for (let i = 0; i < 6; i++) intentar(() => w.ctx.adminEntrar('000000'));
+  x = intentar(() => w.ctx.adminEntrar(PIN));
+  check('el PIN queda bloqueado', x.e && /Demasiados intentos/.test(x.e.message));
+  x = intentar(() => w.ctx.adminCargarPago(token, { apodo: 'Colo', monto: 15000, fecha: '2026-10-10', tipo: 'Cuota' }));
+  check('el celular recordado sigue funcionando', !x.e, x.e && x.e.message);
+  w.setNow(nowIso('2026-10-10 20:16'));
+  x = intentar(() => w.ctx.adminEntrar(PIN));
+  check('después de 15 minutos el PIN vuelve a andar', !x.e, x.e && x.e.message);
+  w.ctx.adminSalir(token);
+  x = intentar(() => w.ctx.adminEntrar(token));
+  check('"Salir" invalida el código', x.e && /PIN incorrecto/.test(x.e.message));
+  const t2 = w.ctx.adminEntrar(PIN, true).token;
+  w.run('definirPin');
+  x = intentar(() => w.ctx.adminEntrar(t2));
+  check('un PIN nuevo invalida los celulares recordados', x.e && /PIN incorrecto/.test(x.e.message));
+}
+
+section('F3 comprobantes: errores de Mercado Pago y carpeta borrada');
+{
+  const w = mundoAdmin(basePayments());
+  w.ocrTexto = 'Número de operación 999888777666';
+  w.scriptProps.CARPETA_COMPROBANTES = 'carpeta-borrada';
+  const x = intentar(() => w.ctx.adminLeerComprobante(PIN, { datos: Buffer.from('img').toString('base64'), tipo: 'image/jpeg' }));
+  check('operación inexistente: devuelve el archivo y un aviso', !x.e && x.r.op === null && x.r.archivoId, x.e && x.e.stack);
+  check('carpeta borrada: crea otra', w.scriptProps.CARPETA_COMPROBANTES !== 'carpeta-borrada' && /^carpeta/.test(w.scriptProps.CARPETA_COMPROBANTES), w.scriptProps.CARPETA_COMPROBANTES);
+}
+
+section('F4 formatos de Cuotas y Resumen');
+{
+  const w = newWorld(basePayments());
+  w.setNow(nowIso('2026-10-10 20:00'));
+  w.run('recalcular_');
+  const c = w.sheet('Cuotas');
+  check('Cuotas: meses y "Pagado hasta" como texto', c.raw(1, 6).fmt === '@' && c.raw(2, 5).fmt === '@', c.raw(1, 6).fmt + ' ' + c.raw(2, 5).fmt);
+  const r = w.sheet('Resumen');
+  const fila = r.rows(1).findIndex(f => f[0] === 'Integrantes con deuda') + 1;
+  check('Resumen: cantidades sin formato de plata', r.raw(fila, 2).fmt === '0', r.raw(fila, 2).fmt);
 }
 
 section('A10 funciones del menú no se pueden usar desde la app');

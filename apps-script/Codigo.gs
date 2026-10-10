@@ -129,14 +129,26 @@ function onEdit(e) {
 
 function sincronizarAhora() {
   soloDesdePlanilla_();
-  const texto = sincronizar();
+  const texto = sincronizar_();
   aviso_(texto || 'Ya hay una sincronización en curso. Probá de nuevo en un minuto.');
 }
 
 // ---------------------------------------------------------- sincronizar
 
+/**
+ * Lo llama el disparador de cada 30 minutos. Como es una función pública, también
+ * se podría llamar desde la app: solo corre si viene de un disparador de este proyecto.
+ */
+function sincronizar(e) {
+  const uid = e && e.triggerUid ? String(e.triggerUid) : '';
+  if (!uid || !ScriptApp.getProjectTriggers().some(t => String(t.getUniqueId()) === uid)) {
+    throw new Error('La sincronización corre sola cada 30 minutos o desde el menú de la planilla.');
+  }
+  return sincronizar_();
+}
+
 /** Devuelve el texto del resultado, o null si ya había otra sincronización corriendo. */
-function sincronizar() {
+function sincronizar_() {
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(30000)) return null;
   const ss = SpreadsheetApp.getActive();
@@ -691,7 +703,9 @@ function soloDia_(d) {
 function nombrePagador_(p) {
   const nombre = [get_(p, 'payer.first_name'), get_(p, 'payer.last_name')]
     .filter(Boolean).join(' ').trim();
-  return nombre || String(get_(p, 'point_of_interaction.transaction_data.bank_info.payer.long_name') || '');
+  // En transferencias bancarias, long_name suele ser el banco; el titular viene en account_holder_name.
+  const banco = get_(p, 'point_of_interaction.transaction_data.bank_info.payer') || {};
+  return nombre || String(banco.account_holder_name || banco.long_name || '');
 }
 
 /** Texto que viene de afuera: nunca se interpreta como fórmula. */

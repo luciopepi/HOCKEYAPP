@@ -79,7 +79,7 @@ function datosApp_() {
     valores: tablaValores_(d.valores).map(v => ({ desde: v.texto, cuota: v.cuota, cancha: v.cancha })),
     porMes: est.porMes.slice().reverse().map(p => ({ mes: nombreMes_(p.mes), cuotas: p.cuotas, otros: p.otros })),
     gastos: d.gastos.slice().sort((a, b) => b.fecha - a.fecha).slice(0, 30).map(g => ({
-      fecha: fechaCorta_(g.fecha), concepto: g.concepto || g.tipo, tipo: g.tipo, destinatario: g.destinatario, monto: g.monto,
+      fecha: fechaCorta_(g.fecha), concepto: g.concepto || g.tipo, tipo: g.tipo, destinatario: sinCuentas_(g.destinatario), monto: g.monto,
     })),
   };
 
@@ -89,6 +89,15 @@ function datosApp_() {
     // datos demasiado grandes para la caché: se leen cada vez
   }
   return datos;
+}
+
+/** Saca CVU, CBU, CUIT, alias y números largos de un texto que se muestra en público. */
+function sinCuentas_(texto) {
+  return String(texto || '')
+    .replace(/\([^)]*\d{6,}[^)]*\)/g, '')
+    .replace(/\b(CVU|CBU|CUIT|CUIL|alias|cuenta)\b[:\s]*[\w.\-\/$]*/gi, '')
+    .replace(/\d[\d.\-\/ ]{5,}\d/g, '')
+    .replace(/\s{2,}/g, ' ').replace(/[\s·,;:-]+$/, '').trim();
 }
 
 /** Valores vigentes en cada cambio, con los dos montos completos. */
@@ -124,7 +133,9 @@ function porRevisar_(ss) {
 // app, así que todas verifican el PIN antes de leer o escribir nada.
 
 const PIN_PROP = 'ADMIN_PIN';
-const PIN_FALLOS = 'adminFallos';
+const FALLOS_PROP = 'ADMIN_FALLOS';
+const TOKENS_PROP = 'ADMIN_CELULARES';
+const MAX_CELULARES = 5;
 const PIN_MAX_FALLOS = 5;
 const PIN_BLOQUEO_SEG = 900; // 15 minutos sin poder probar después de 5 PIN incorrectos
 const TIPOS_EFECTIVO = [IMP.CUOTA, IMP.OTRO_CAJA, IMP.NO_CAJA];
@@ -149,8 +160,10 @@ function definirPin() {
     return;
   }
   const sal = Utilities.getUuid();
-  PropertiesService.getScriptProperties().setProperty(PIN_PROP, sal + ':' + hashPin_(sal, pin));
-  CacheService.getScriptCache().remove(PIN_FALLOS);
+  const props = PropertiesService.getScriptProperties();
+  props.setProperty(PIN_PROP, sal + ':' + hashPin_(sal, pin));
+  props.deleteProperty(FALLOS_PROP);
+  props.deleteProperty(TOKENS_PROP); // un PIN nuevo cierra la sesión de los celulares recordados
   ui.alert('PIN guardado. En la app, tocá "Administrar" al pie de la pantalla.');
 }
 
@@ -159,18 +172,47 @@ function hashPin_(sal, pin) {
     Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, sal + '|' + pin, Utilities.Charset.UTF_8));
 }
 
-function verificarPin_(pin) {
-  const guardado = PropertiesService.getScriptProperties().getProperty(PIN_PROP);
+/**
+ * La credencial es el PIN o, en un celular que eligió "Recordar", un código largo
+ * ("t:…") que se entrega al entrar. Los intentos fallidos de PIN bloquean el PIN
+ * 15 minutos, pero no los celulares recordados: nadie puede dejar afuera al
+ * administrador probando PIN equivocados.
+ */
+function verificarPin_(cred) {
+  const props = PropertiesService.getScriptProperties();
+  const guardado = props.getProperty(PIN_PROP);
   if (!guardado) {
     throw new Error('Todavía no hay PIN. Definilo en la planilla: menú Caja Hockey → Definir PIN del panel de administrador.');
   }
-  const cache = CacheService.getScriptCache();
-  const fallos = Number(cache.get(PIN_FALLOS)) || 0;
-  if (fallos >= PIN_MAX_FALLOS) throw new Error('Demasiados intentos. Probá de nuevo en 15 minutos.');
-  const corte = guardado.indexOf(':');
-  if (hashPin_(guardado.slice(0, corte), String(pin == null ? '' : pin).trim()) !== guardado.slice(corte + 1)) {
-    cache.put(PIN_FALLOS, String(fallos + 1), PIN_BLOQUEO_SEG);
+  const c = String(cred == null ? '' : cred).trim();
+  if (/^t:[0-9a-f]{64}$/.test(c)) {
+    if (celulares_(props).some(t => t.h === hashPin_('celular', c))) return;
     throw new Error('PIN incorrecto.');
+  }
+  const lock = LockService.getUserLock(); // aparte del lock de la sincronización
+  lock.waitLock(10000);
+  try {
+    const ahora = Date.now();
+    let f = { n: 0, desde: ahora };
+    try { f = JSON.parse(props.getProperty(FALLOS_PROP) || '') || f; } catch (e) { /* sin fallos */ }
+    if (ahora - f.desde >= PIN_BLOQUEO_SEG * 1000) f = { n: 0, desde: ahora };
+    if (f.n >= PIN_MAX_FALLOS) throw new Error('Demasiados intentos. Probá de nuevo en 15 minutos.');
+    const corte = guardado.indexOf(':');
+    if (hashPin_(guardado.slice(0, corte), c) !== guardado.slice(corte + 1)) {
+      f.n += 1;
+      props.setProperty(FALLOS_PROP, JSON.stringify(f));
+      throw new Error('PIN incorrecto.');
+    }
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function celulares_(props) {
+  try {
+    return JSON.parse(props.getProperty(TOKENS_PROP) || '[]');
+  } catch (e) {
+    return [];
   }
 }
 
@@ -237,10 +279,31 @@ function respuestaAdmin_(mensaje, extra) {
   return Object.assign({ mensaje: mensaje, admin: adminDatos_(), datos: datosApp_() }, extra || {});
 }
 
-function adminEntrar(pin) {
-  verificarPin_(pin);
-  CacheService.getScriptCache().remove(PIN_FALLOS);
-  return adminDatos_();
+/** Entra al panel. Con "recordar", devuelve un código para este celular en lugar de guardar el PIN. */
+function adminEntrar(cred, recordar) {
+  verificarPin_(cred);
+  const props = PropertiesService.getScriptProperties();
+  const datos = adminDatos_();
+  if (!/^t:/.test(String(cred))) {
+    props.deleteProperty(FALLOS_PROP);
+    if (recordar) {
+      const token = 't:' + (Utilities.getUuid() + Utilities.getUuid()).replace(/-/g, '').toLowerCase();
+      const lista = celulares_(props).concat([{ h: hashPin_('celular', token), desde: fechaTexto_(new Date()) }]);
+      props.setProperty(TOKENS_PROP, JSON.stringify(lista.slice(-MAX_CELULARES)));
+      datos.token = token;
+    }
+  }
+  return datos;
+}
+
+/** "Salir del panel" en un celular recordado: ese código deja de servir. */
+function adminSalir(cred) {
+  const c = String(cred == null ? '' : cred).trim();
+  if (!/^t:[0-9a-f]{64}$/.test(c)) return true;
+  const props = PropertiesService.getScriptProperties();
+  const h = hashPin_('celular', c);
+  props.setProperty(TOKENS_PROP, JSON.stringify(celulares_(props).filter(t => t.h !== h)));
+  return true;
 }
 
 /** Detalle de un integrante: meses con lo que falta y sus pagos, para reclasificar. */
@@ -449,15 +512,16 @@ function adminSimularValor(pin, d) {
   const valores = conValor_(datos.valores, nuevo);
   const afectados = [];
   if (nuevo.tipo === 'cuota') {
-    const hoy = nuevo.desde > datos.hoy ? nuevo.desde : datos.hoy;
-    const a = calcularEstado_(Object.assign({}, datos, { hoy: hoy }));
-    const b = calcularEstado_(Object.assign({}, datos, { hoy: hoy, valores: valores }));
-    const i = a.meses.findIndex(m => m.getTime() === nuevo.desde.getTime());
+    // Meses desde "vigente desde" que cada uno ya tiene pagados: la diferencia de precio de esos meses.
+    const a = calcularEstado_(datos);
+    const b = calcularEstado_(Object.assign({}, datos, { valores: valores }));
     a.integrantes.forEach((x, k) => {
-      const y = b.integrantes[k];
-      if (i >= 0 && !x.auto && x.estados[i].e === 'pagado' && y.estados[i].e !== 'pagado') {
-        afectados.push({ apodo: x.apodo, diferencia: y.deuda - x.deuda });
-      }
+      if (x.auto) return;
+      let dif = 0;
+      x.estados.forEach((s, i) => {
+        if (a.meses[i] >= nuevo.desde && s.e === 'pagado') dif += b.integrantes[k].estados[i].c - s.c;
+      });
+      if (dif > 0) afectados.push({ apodo: x.apodo, diferencia: dif });
     });
   }
   const cuota = valorEn_(valores, 'cuota', nuevo.desde);
@@ -529,11 +593,18 @@ function adminLeerComprobante(pin, img) {
   const archivoId = subirDrive_(blob, { name: blob.getName(), parents: [carpetaComprobantes_()] });
   const miId = String(miUsuario_().id);
   const candidatos = numerosOperacion_(ocr_(blob)).slice(0, 4);
+  let aviso = '';
   for (let i = 0; i < candidatos.length; i++) {
-    const pago = buscarPago_(candidatos[i]);
-    if (pago) return { op: candidatos[i], archivoId: archivoId, pago: resumenGasto_(pago, miId) };
+    try {
+      const pago = buscarPago_(candidatos[i]);
+      if (pago) return { op: candidatos[i], archivoId: archivoId, pago: resumenGasto_(pago, miId) };
+    } catch (e) {
+      if (/\b401\b/.test(e.message)) throw e; // la clave de Mercado Pago no sirve: hay que avisar
+      aviso = e.message;
+    }
   }
-  return { op: null, archivoId: archivoId, mensaje: 'No pude leer el N° de operación en la imagen. Escribilo abajo.' };
+  return { op: null, archivoId: archivoId,
+    mensaje: aviso || 'No pude leer el N° de operación en la imagen. Escribilo abajo.' };
 }
 
 function adminBuscarOperacion(pin, op) {
@@ -592,9 +663,9 @@ function resumenGasto_(p, miId) {
 }
 
 function nombreDestinatario_(p) {
-  const banco = get_(p, 'point_of_interaction.transaction_data.bank_info.collector.long_name');
+  const banco = get_(p, 'point_of_interaction.transaction_data.bank_info.collector') || {};
   const persona = [get_(p, 'collector.first_name'), get_(p, 'collector.last_name')].filter(Boolean).join(' ');
-  return String(banco || persona || p.description || ('Cuenta ' + idCobrador_(p))).slice(0, 80);
+  return sinCuentas_(banco.account_holder_name || persona || p.description || banco.long_name || '').slice(0, 80);
 }
 
 /**
@@ -633,7 +704,11 @@ function driveFetch_(url, opciones) {
 function carpetaComprobantes_() {
   const props = PropertiesService.getScriptProperties();
   const guardada = props.getProperty(CARPETA_PROP);
-  if (guardada) return guardada;
+  if (guardada) {
+    const r = UrlFetchApp.fetch(DRIVE + '/' + guardada + '?fields=id,trashed', {
+      headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() }, muteHttpExceptions: true });
+    if (r.getResponseCode() === 200 && !JSON.parse(r.getContentText()).trashed) return guardada;
+  }
   const r = driveFetch_(DRIVE, {
     method: 'post', contentType: 'application/json',
     payload: JSON.stringify({ name: 'Caja Hockey - Comprobantes', mimeType: 'application/vnd.google-apps.folder' }),
