@@ -33,6 +33,9 @@ Estado: **en definición**. No se programa nada nuevo hasta cerrar el diseño.
 | 24 | Pendientes del administrador | Contador en la app: "Administrar (3)". Sin mails. |
 | 25 | Pagos que no son de la caja (asados, etc.) | Montos múltiplos de la cuota: cuota, automático. Otros montos: "Por clasificar", no suman hasta que el administrador elija Cuota o "No es de la caja". Cualquier pago se puede reclasificar. |
 | 26 | Etapas | 3 etapas (ver abajo). |
+| 27 | "Falta pagar este mes" (público) | Nombre y cuántas cuotas debe. Sin montos en pesos por persona. |
+| 28 | Pestaña "Caja" (público) | Saldo, cobrado por mes y lista de gastos. Sin el detalle de quién pagó cuánto. |
+| 29 | Antes de programar | Diseño de pantallas de la etapa 1 para revisar en el lienzo de diseño. |
 
 ## Etapas
 
