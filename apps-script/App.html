@@ -4,312 +4,344 @@
 <base target="_top">
 <meta charset="utf-8">
 <link rel="preconnect" href="https://fonts.gstatic.com">
-<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Barlow:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
   :root {
-    --navy: #0F2340; --azul: #1F4FD1; --azul-claro: #E7EEFD; --naranja: #B8430E; --naranja-claro: #FDECE2;
-    --fondo: #F2F4F7; --tinta: #0E1726; --gris: #475263; --gris2: #5E6878; --linea: #E2E6EC;
+    --navy: #0F2340; --azul: #1F4FD1; --azul-claro: #E7EEFD; --azul-osc: #1A3E9E; --naranja: #B8430E; --naranja-claro: #FDECE2;
+    --fondo: #F2F4F7; --tinta: #0E1726; --gris: #475263; --gris2: #5E6878; --linea: #E2E6EC; --borde: #D5DAE2;
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--fondo); color: var(--tinta); font-family: 'Barlow', system-ui, sans-serif; font-size: 15px; }
   .num { font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-variant-numeric: tabular-nums; }
-  header { background: var(--navy); color: #fff; padding: 18px 18px 22px; }
-  header .top { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
-  header .marca { display: flex; align-items: center; gap: 10px; }
-  header .logo { width: 38px; height: 38px; border-radius: 11px; background: var(--azul); display: flex; align-items: center; justify-content: center; font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 21px; }
-  header .sub { color: #B9C6DC; font-size: 13px; }
-  header .etq { margin-top: 18px; font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: #B9C6DC; }
-  header .monto { display: flex; align-items: baseline; gap: 8px; margin-top: 6px; }
-  header .monto .num { font-size: 50px; line-height: 1; }
-  header .monto span:last-child { color: #B9C6DC; font-size: 16px; }
-  .barra { height: 12px; border-radius: 6px; background: #22385A; overflow: hidden; margin-top: 12px; }
+  header { background: var(--navy); color: #fff; padding: 18px 18px 22px; display: flex; flex-direction: column; gap: 16px; }
+  .marca { display: flex; align-items: center; gap: 12px; }
+  .logo { width: 40px; height: 40px; border-radius: 12px; background: var(--azul); display: flex; align-items: center; justify-content: center; font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 22px; flex: none; }
+  .titulo-h { font-weight: 600; font-size: 17px; }
+  .sub { color: #B9C6DC; font-size: 13px; }
+  .etq { font-size: 13px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: #B9C6DC; }
+  .grande { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .grande .num { font-size: 56px; line-height: 1; }
+  .grande span:last-child { color: #B9C6DC; font-size: 17px; }
+  .barra { height: 12px; border-radius: 6px; background: #22385A; overflow: hidden; }
   .barra div { height: 100%; border-radius: 6px; background: #6E9BFF; }
-  header .pie { display: flex; justify-content: space-between; margin-top: 10px; font-weight: 600; }
-  header .pie .falta { color: #FFB48A; }
-  header .pie .ok { color: #9EE0B5; }
-  header .nota { color: #B9C6DC; font-size: 13px; margin-top: 6px; }
-  main { padding: 14px 14px 96px; max-width: 640px; margin: 0 auto; }
-  .seccion { display: none; flex-direction: column; gap: 14px; }
+  .pie { display: flex; justify-content: space-between; font-weight: 600; gap: 10px; }
+  .falta { color: #FFB48A; } .ok { color: #9EE0B5; }
+  .volver { width: 44px; height: 44px; border-radius: 12px; border: 1px solid #2E4566; background: transparent; color: #fff; display: flex; align-items: center; justify-content: center; cursor: pointer; flex: none; }
+  main { padding: 16px 16px 100px; max-width: 640px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
+  .seccion { display: none; flex-direction: column; gap: 16px; }
   .seccion.activa { display: flex; }
-  .card { background: #fff; border: 1px solid var(--linea); border-radius: 16px; padding: 16px; }
-  .card h2 { margin: 0 0 10px; font-size: 17px; font-weight: 600; }
+  .card { background: #fff; border: 1px solid var(--linea); border-radius: 16px; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+  .card h2 { margin: 0; font-size: 17px; font-weight: 600; }
+  .titulo-sec { margin: 0; font-size: 13px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--gris2); }
   .kpis { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-  .kpi .etq { color: var(--gris); font-size: 14px; }
-  .kpi .num { font-size: 28px; margin-top: 4px; display: block; }
-  .kpi .det { color: var(--gris2); font-size: 13px; }
+  .kpi { gap: 6px; }
+  .kpi .etq2 { color: var(--gris); font-size: 14px; }
+  .kpi .num { font-size: 30px; line-height: 1; }
+  .det { color: var(--gris2); font-size: 13px; }
   .fila { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid #EEF1F5; }
   .fila:last-child { border-bottom: none; }
-  .avatar { width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 13px; flex: none; background: #EEF1F5; color: var(--gris); }
-  .avatar.debe { background: var(--naranja-claro); color: var(--naranja); }
-  .fila .cuerpo { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-  .fila .titulo { font-weight: 600; font-size: 15px; }
-  .fila .det { color: var(--gris2); font-size: 13px; }
-  .fila .num { font-size: 19px; }
-  .rojo { color: var(--naranja); }
-  .azul { color: var(--azul); }
-  .vacio { color: var(--gris2); padding: 6px 0; }
-  .grilla { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-  table { border-collapse: separate; border-spacing: 0; }
-  th, td { padding: 6px 4px; text-align: center; font-size: 13px; white-space: nowrap; }
-  th { color: var(--gris); font-weight: 600; }
-  th:first-child, td:first-child { position: sticky; left: 0; background: #fff; text-align: left; padding-right: 10px; font-weight: 600; font-size: 14px; }
-  th.actual { color: var(--azul); }
-  .celda { width: 30px; height: 30px; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; }
-  .celda.pagado { background: var(--azul); color: #fff; }
-  .celda.debe { background: var(--naranja-claro); border: 1.5px solid #D9561A; color: var(--naranja); font-weight: 700; }
-  .celda.nada { background: #EEF1F5; }
-  .leyenda { display: flex; flex-wrap: wrap; gap: 14px; font-size: 13px; color: var(--gris); margin-bottom: 10px; }
-  .leyenda span { display: inline-flex; align-items: center; gap: 6px; }
-  .leyenda i { width: 14px; height: 14px; border-radius: 4px; display: inline-block; }
-  select { width: 100%; min-height: 48px; border: 1px solid #D5DAE2; border-radius: 12px; padding: 0 12px; font: inherit; font-size: 16px; background: #fff; color: var(--tinta); }
-  label { display: block; font-size: 13px; font-weight: 600; color: var(--gris); margin-bottom: 6px; }
-  .estado { border-radius: 16px; padding: 16px; }
-  .estado.debe { background: var(--naranja-claro); color: #6E2707; }
-  .estado.ok { background: var(--azul-claro); color: #1A3E9E; }
-  .estado .num { font-size: 44px; line-height: 1.1; display: block; }
-  .tira { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; }
-  .tira div { display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 11px; color: var(--gris); }
-  .tira .celda { width: 100%; }
+  .avatar { width: 38px; height: 38px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 14px; flex: none; background: var(--naranja-claro); color: var(--naranja); }
+  .cuerpo { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+  .nombre { font-weight: 600; font-size: 16px; }
+  .rojo { color: var(--naranja); } .azul { color: var(--azul); }
+  .vacio { color: var(--gris2); padding: 4px 0; }
   .alias { display: flex; align-items: center; gap: 10px; background: var(--fondo); border-radius: 12px; padding: 10px 10px 10px 14px; }
   .alias b { flex: 1; font-size: 17px; }
-  button.copiar { min-height: 44px; padding: 0 14px; border: 1px solid #D5DAE2; border-radius: 10px; background: #fff; color: var(--azul); font: inherit; font-weight: 600; cursor: pointer; }
-  .actualizado { text-align: center; color: var(--gris2); font-size: 12px; }
-  nav { position: fixed; left: 0; right: 0; bottom: 0; background: #fff; border-top: 1px solid var(--linea); display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); padding: 6px 4px calc(8px + env(safe-area-inset-bottom)); }
-  nav button { min-height: 54px; border: none; background: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; font: inherit; font-size: 12px; color: var(--gris2); cursor: pointer; }
+  .leyenda { display: flex; flex-wrap: wrap; gap: 12px; font-size: 13px; color: var(--gris); }
+  .leyenda span { display: inline-flex; align-items: center; gap: 6px; }
+  .leyenda i { width: 14px; height: 14px; border-radius: 4px; display: inline-block; }
+  .grilla { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { border-collapse: separate; border-spacing: 4px; }
+  th, td { padding: 0; text-align: center; font-size: 13px; white-space: nowrap; }
+  th { color: var(--gris); font-weight: 600; padding: 0 2px 4px; }
+  th.actual { color: var(--azul); font-weight: 700; }
+  th:first-child, td:first-child, tbody th { position: sticky; left: 0; background: #fff; text-align: left; padding-right: 8px; font-weight: 600; font-size: 15px; color: var(--tinta); z-index: 1; }
+  .c { width: 34px; height: 32px; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; }
+  .c.pagado { background: var(--azul); color: #fff; }
+  .c.debe { background: var(--naranja-claro); border: 1.5px solid #D9561A; color: var(--naranja); }
+  .c.sinvencer { background: #EEF1F5; color: var(--gris); }
+  .c.nojuega { background: transparent; }
+  .c.nojuega::after { content: ''; width: 18px; height: 2px; background: #9AA3B0; }
+  .c.medio.sinvencer { background: var(--azul-claro); border: 1.5px solid var(--azul); color: var(--azul-osc); }
+  .tira { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; }
+  .tira div { display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 12px; color: var(--gris); }
+  .tira .c { width: 100%; }
+  .tabla { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px 14px; font-size: 14px; }
+  .tabla .h { color: var(--gris); font-weight: 600; }
+  .der { text-align: right; font-variant-numeric: tabular-nums; }
+  .estado { border-radius: 16px; padding: 18px; display: flex; flex-direction: column; gap: 6px; }
+  .estado.debe { background: var(--naranja-claro); color: #6E2707; }
+  .estado.ok { background: var(--azul-claro); color: var(--azul-osc); }
+  .estado .num { font-size: 44px; line-height: 1.05; }
+  .apilada { display: flex; gap: 2px; height: 14px; border-radius: 7px; overflow: hidden; background: #EEF1F5; }
+  .punto { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+  label, .lbl { display: block; font-size: 13px; font-weight: 600; color: var(--gris); margin-bottom: 6px; }
+  .campo { display: flex; flex-direction: column; }
+  input[type=text], input[type=number], input[type=date], input[type=password], input[type=tel], select {
+    width: 100%; min-height: 48px; border: 1px solid var(--borde); border-radius: 12px; padding: 0 12px; font: inherit; font-size: 16px; background: #fff; color: var(--tinta); }
+  .dos { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .opciones { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+  .opciones.de2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .opcion { min-height: 44px; border: 1px solid var(--borde); border-radius: 12px; background: #fff; color: var(--tinta); font: inherit; font-weight: 500; cursor: pointer; padding: 4px 6px; }
+  .opcion[aria-pressed=true] { border: 1.5px solid var(--azul); background: var(--azul-claro); color: var(--azul-osc); font-weight: 600; }
+  .check { display: flex; align-items: center; gap: 10px; min-height: 44px; font-size: 15px; color: var(--tinta); font-weight: 500; margin: 0; }
+  .check input { width: 20px; height: 20px; }
+  button.prim { min-height: 52px; border: none; border-radius: 12px; background: var(--azul); color: #fff; font: inherit; font-weight: 600; font-size: 17px; cursor: pointer; }
+  button.sec { min-height: 44px; padding: 0 14px; border: 1px solid var(--borde); border-radius: 12px; background: #fff; color: var(--azul); font: inherit; font-weight: 600; cursor: pointer; flex: none; }
+  button.peligro { min-height: 48px; border: 1px solid #D9561A; border-radius: 12px; background: #fff; color: var(--naranja); font: inherit; font-weight: 600; cursor: pointer; }
+  button.link { border: none; background: none; padding: 4px; min-height: 44px; font: inherit; color: var(--azul); text-decoration: underline; cursor: pointer; }
+  button.link.gris { color: var(--gris); font-size: 14px; }
+  button:disabled { opacity: .55; cursor: default; }
+  .aviso-box { border-radius: 12px; padding: 10px 12px; font-size: 14px; }
+  .aviso-box.info { background: var(--azul-claro); color: var(--azul-osc); }
+  .aviso-box.alerta { background: var(--naranja-claro); color: #6E2707; }
+  .error { color: var(--naranja); font-size: 14px; font-weight: 600; margin: 0; }
+  .ayuda { color: var(--gris2); font-size: 13px; margin: 0; }
+  .tarjeta { background: #fff; border: 1px solid var(--linea); border-radius: 16px; padding: 16px; display: flex; align-items: center; gap: 14px; text-decoration: none; color: var(--tinta); width: 100%; font: inherit; text-align: left; cursor: pointer; min-height: 72px; }
+  .contador { width: 44px; height: 44px; border-radius: 12px; background: var(--naranja-claro); color: var(--naranja); display: flex; align-items: center; justify-content: center; font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 22px; flex: none; }
+  .contador.cero { background: #EEF1F5; color: var(--gris); }
+  .icono { width: 40px; height: 40px; border-radius: 12px; background: var(--azul-claro); color: var(--azul); display: flex; align-items: center; justify-content: center; flex: none; }
+  .accion { flex-direction: column; align-items: flex-start; min-height: 112px; gap: 10px; }
+  .lista { background: #fff; border: 1px solid var(--linea); border-radius: 16px; display: flex; flex-direction: column; overflow: hidden; }
+  .lista button { border: none; border-bottom: 1px solid #EEF1F5; background: #fff; display: flex; align-items: center; gap: 12px; padding: 14px 16px; min-height: 56px; font: inherit; text-align: left; cursor: pointer; color: var(--tinta); }
+  .lista button:last-child { border-bottom: none; }
+  .pendiente { display: flex; flex-direction: column; gap: 8px; padding: 12px 0; border-bottom: 1px solid #EEF1F5; }
+  .pendiente:last-child { border-bottom: none; }
+  .arriba { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
+  .linea-sel { display: flex; gap: 8px; }
+  .linea-sel select, .linea-sel input { min-height: 44px; }
+  .burbuja { background: #E9F3E6; border-radius: 14px 14px 14px 4px; padding: 14px; font-size: 15px; line-height: 1.45; color: #13261A; white-space: pre-line; word-break: break-word; }
+  .subir { border: 1.5px dashed #9AA3B0; border-radius: 14px; min-height: 120px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; color: var(--gris); cursor: pointer; padding: 16px; text-align: center; margin: 0; }
+  .subir b { color: var(--azul); }
+  .solo-lector { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .actualizado { text-align: center; color: var(--gris2); font-size: 12px; margin: 0; }
+  nav { position: fixed; left: 0; right: 0; bottom: 0; background: #fff; border-top: 1px solid var(--linea); display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); padding: 6px 4px calc(10px + env(safe-area-inset-bottom)); z-index: 5; }
+  nav button { min-height: 56px; border: none; background: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font: inherit; font-size: 12px; color: var(--gris2); cursor: pointer; }
   nav button.activa { color: var(--azul); font-weight: 600; }
   nav svg { width: 22px; height: 22px; }
-  .campos { display: flex; flex-direction: column; gap: 12px; }
-  .dos { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-  input[type=text], input[type=number], input[type=date], input[type=password], input[type=tel] { width: 100%; min-height: 48px; border: 1px solid #D5DAE2; border-radius: 12px; padding: 0 12px; font: inherit; font-size: 16px; background: #fff; color: var(--tinta); }
-  .check { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--gris); font-weight: 500; margin: 0; }
-  .check input { width: 20px; height: 20px; }
-  button.primario { min-height: 48px; border: none; border-radius: 12px; background: var(--azul); color: #fff; font: inherit; font-weight: 600; font-size: 16px; cursor: pointer; }
-  button.secundario { min-height: 44px; padding: 0 14px; border: 1px solid #D5DAE2; border-radius: 10px; background: #fff; color: var(--azul); font: inherit; font-weight: 600; cursor: pointer; flex: none; }
-  button:disabled { opacity: .55; cursor: default; }
-  button.link { border: none; background: none; padding: 4px; font: inherit; font-size: 12px; color: var(--azul); text-decoration: underline; cursor: pointer; }
-  .ayuda { color: var(--gris2); font-size: 13px; margin: 0; }
-  .error { color: var(--naranja); font-size: 14px; font-weight: 600; margin: 0; }
-  .asignar { display: flex; gap: 8px; margin-top: 8px; }
-  .asignar select { min-height: 44px; }
-  .pendiente { padding: 12px 0; border-bottom: 1px solid #EEF1F5; }
-  .pendiente:last-child { border-bottom: none; }
-  .pendiente .arriba { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
-  .aviso { position: fixed; left: 14px; right: 14px; bottom: calc(80px + env(safe-area-inset-bottom)); max-width: 612px; margin: 0 auto; background: var(--navy); color: #fff; border-radius: 12px; padding: 12px 14px; font-size: 14px; display: none; z-index: 10; }
-  .aviso.error { background: var(--naranja); }
+  body.admin nav { display: none; }
+  body.admin main { padding-bottom: 32px; }
+  .toast { position: fixed; left: 16px; right: 16px; bottom: calc(84px + env(safe-area-inset-bottom)); max-width: 608px; margin: 0 auto; background: var(--navy); color: #fff; border-radius: 12px; padding: 12px 14px; font-size: 14px; display: none; z-index: 10; }
+  body.admin .toast { bottom: calc(20px + env(safe-area-inset-bottom)); }
+  .toast.error { background: var(--naranja); }
 </style>
 </head>
 <body>
-<header>
-  <div class="top">
-    <div class="marca">
-      <div class="logo">H</div>
-      <div><div style="font-weight:600;font-size:17px">Caja del equipo</div><div class="sub">Hockey · <span id="mes"></span></div></div>
-    </div>
-  </div>
-  <div class="etq">Cancha del mes</div>
-  <div class="monto"><span class="num" id="recaudado"></span><span id="costo"></span></div>
-  <div class="barra"><div id="barra"></div></div>
-  <div class="pie"><span id="cobertura"></span><span id="falta"></span></div>
-  <div class="nota" id="notaCancha"></div>
-</header>
+<header id="cabecera"></header>
 
 <main>
-  <section class="seccion activa" id="s-inicio">
-    <div class="kpis">
-      <div class="card kpi"><div class="etq">Saldo en caja</div><span class="num" id="saldo"></span><div class="det">Mercado Pago y efectivo</div></div>
-      <div class="card kpi"><div class="etq">Fondo equipamiento</div><span class="num" id="fondo"></span><div class="det">Disponible después de la cancha</div></div>
-    </div>
-    <div class="card"><h2>Falta pagar este mes</h2><div id="pendientes"></div></div>
-    <div class="card"><h2>Últimos movimientos</h2><div id="ultimos"></div></div>
-  </section>
-
-  <section class="seccion" id="s-planilla">
-    <div class="card">
-      <h2>Planilla de cuotas</h2>
-      <div class="leyenda">
-        <span><i style="background:var(--azul)"></i>Pagado</span>
-        <span><i style="background:var(--naranja-claro);border:1.5px solid #D9561A"></i>Debe</span>
-        <span><i style="background:#EEF1F5"></i>Sin vencer</span>
-      </div>
-      <div class="grilla"><table id="tabla"></table></div>
-    </div>
-  </section>
-
-  <section class="seccion" id="s-cuota">
-    <div class="card">
-      <label for="quien">¿Quién sos?</label>
-      <select id="quien"></select>
-    </div>
-    <div id="miCuota" style="display:flex;flex-direction:column;gap:14px"></div>
-  </section>
-
-  <section class="seccion" id="s-caja">
-    <div class="kpis">
-      <div class="card kpi"><div class="etq">Saldo en caja</div><span class="num" id="saldo2"></span></div>
-      <div class="card kpi"><div class="etq">Cuotas adelantadas</div><span class="num" id="adelantos"></span></div>
-    </div>
-    <div class="card"><h2>Movimientos</h2><div id="movimientos"></div></div>
-  </section>
-
+  <section class="seccion activa" id="s-inicio"></section>
+  <section class="seccion" id="s-planilla"></section>
+  <section class="seccion" id="s-cuota"></section>
+  <section class="seccion" id="s-caja"></section>
   <section class="seccion" id="s-admin"></section>
-
-  <p class="actualizado">Actualizado: <span id="actualizado"></span> · <button class="link" id="abrirAdmin">Administrar</button></p>
+  <p class="actualizado" id="pie"></p>
 </main>
 
-<nav>
-  <button data-s="inicio" class="activa" aria-label="Inicio"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/></svg>Inicio</button>
-  <button data-s="planilla" aria-label="Planilla"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M9 4v16"/></svg>Planilla</button>
-  <button data-s="cuota" aria-label="Mi cuota"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg>Mi cuota</button>
-  <button data-s="caja" aria-label="Caja"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4v16M3 8l4-4 4 4M17 20V4M13 16l4 4 4-4"/></svg>Caja</button>
+<nav aria-label="Secciones">
+  <button data-s="inicio" class="activa"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/></svg>Inicio</button>
+  <button data-s="planilla"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M9 4v16"/></svg>Planilla</button>
+  <button data-s="cuota"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg>Mi cuota</button>
+  <button data-s="caja"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4v16M3 8l4-4 4 4M17 20V4M13 16l4 4 4-4"/></svg>Caja</button>
 </nav>
-<div class="aviso" id="aviso" role="status"></div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <script>
 let DATA = <?!= datos ?>;
 
 const $ = id => document.getElementById(id);
-const pesos = n => '$' + Math.round(n).toLocaleString('es-AR');
+const pesos = n => (n < 0 ? '−' : '') + '$' + Math.round(Math.abs(n)).toLocaleString('es-AR');
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const iniciales = a => a.split(/\s+/).map(p => p[0]).join('').slice(0, 2).toUpperCase();
-const estadoActual = m => m.estados[DATA.mesIdx] || '';
+const plural = (n, s, p) => n + ' ' + (n === 1 ? s : p);
+const mesDe = texto => String(texto || '').split(' ')[0];
+const ICONO_VOLVER = '<svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>';
+const FLECHA = '<svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#5E6878" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>';
+let seccion = 'inicio';
 
-function celda(estado) {
-  if (estado === 'Pagado') return '<span class="celda pagado" title="Pagado">✓</span>';
-  if (estado === 'Debe') return '<span class="celda debe" title="Debe">!</span>';
-  return '<span class="celda nada" title="Sin vencer"></span>';
+function mesIdx() { return DATA.mesIdx >= 0 ? DATA.mesIdx : 0; }
+
+function celda(s) {
+  const clase = 'c ' + s.e + (s.medio ? ' medio' : '');
+  const txt = s.e === 'pagado' ? (s.medio ? '½' : '✓') : s.e === 'debe' ? (s.medio ? '½' : '!') : (s.medio ? '½' : '');
+  const titulo = { pagado: 'Pagado', debe: 'Debe', sinvencer: 'Sin vencer', nojuega: 'No juega' }[s.e] + (s.medio ? ' (media cuota)' : '');
+  return '<span class="' + clase + '" title="' + titulo + '" aria-label="' + titulo + '">' + txt + '</span>';
 }
 
-function filaMovimiento(m) {
-  return '<div class="fila"><div class="cuerpo"><span class="titulo">' + esc(m.titulo) + '</span><span class="det">' +
-    esc(m.fecha) + (m.detalle ? ' · ' + esc(m.detalle) : '') + '</span></div><span class="num ' + (m.ingreso ? 'azul' : '') + '">' +
-    (m.ingreso ? '+' : '−') + pesos(m.monto) + '</span></div>';
+function aliasCard() {
+  if (!DATA.alias) return '';
+  return '<div class="card"><h2>Cómo pagar</h2><div class="alias"><b>' + esc(DATA.alias) +
+    '</b><button class="sec" data-copiar="' + esc(DATA.alias) + '">Copiar alias</button></div>' +
+    '<p class="ayuda">Transferí desde Mercado Pago: tu pago se registra solo en unos 30 minutos. En efectivo, dáselo al administrador.</p></div>';
 }
 
-function cabecera() {
+// ---------------------------------------------------------------- público
+function cabeceraInicio() {
   const c = DATA.cancha;
-  $('mes').textContent = DATA.mes;
-  $('recaudado').textContent = pesos(c.recaudado);
-  $('costo').textContent = 'de ' + pesos(c.costo);
   const pct = c.costo ? Math.min(100, Math.round(c.recaudado / c.costo * 100)) : 0;
-  $('barra').style.width = pct + '%';
-  $('cobertura').textContent = c.pagaron + ' de ' + c.total + ' pagaron';
-  if (c.faltan > 0) { $('falta').textContent = 'Faltan ' + pesos(c.faltan); $('falta').className = 'falta'; }
-  else { $('falta').textContent = 'Cubierta'; $('falta').className = 'ok'; }
-  $('notaCancha').textContent = (c.pagada ? 'Cancha pagada al club. ' : 'Vence el ' + c.vence + '. ') +
-    'Se necesitan ' + c.necesarios + ' cuotas para cubrirla.';
+  return '<div class="marca"><div class="logo">H</div><div><div class="titulo-h">Caja del equipo</div><div class="sub">Hockey · ' + esc(DATA.mes) + '</div></div></div>' +
+    '<div style="display:flex;flex-direction:column;gap:10px"><span class="etq">Cancha de ' + esc(mesDe(DATA.mes)) + '</span>' +
+    '<div class="grande"><span class="num">' + pesos(c.recaudado) + '</span><span>de ' + pesos(c.costo) + '</span></div>' +
+    '<div class="barra"><div style="width:' + pct + '%"></div></div>' +
+    '<div class="pie"><span>' + c.pagaron + ' de ' + c.total + ' pagaron</span>' +
+    (c.faltan > 0 ? '<span class="falta">Faltan ' + pesos(c.faltan) + '</span>' : '<span class="ok">Cubierta</span>') + '</div>' +
+    '<span class="sub" style="font-size:14px">' + (c.pagada ? 'Cancha pagada al club' + (c.fechaPago ? ' el ' + esc(c.fechaPago) : '') + '.' :
+      'Vence el ' + esc(c.vence) + '. Se necesitan ' + c.necesarios + ' cuotas para cubrirla.') + '</span></div>';
+}
+
+function cabeceraSimple(titulo, sub) {
+  return '<div class="marca"><div class="logo">H</div><div><div class="titulo-h">' + esc(titulo) + '</div>' +
+    (sub ? '<div class="sub">' + esc(sub) + '</div>' : '') + '</div></div>';
 }
 
 function inicio() {
-  $('saldo').textContent = pesos(DATA.caja.saldo);
-  $('fondo').textContent = pesos(DATA.caja.fondo);
-  const deben = DATA.integrantes.filter(m => estadoActual(m) !== 'Pagado');
-  $('pendientes').innerHTML = deben.length ? deben.map(m =>
-    '<div class="fila"><span class="avatar debe">' + esc(iniciales(m.apodo)) + '</span><div class="cuerpo"><span class="titulo">' +
-    esc(m.apodo) + '</span><span class="det">' + (m.debe > DATA.cuota ? 'Debe ' + Math.round(m.debe / DATA.cuota) + ' cuotas' : 'Cuota de ' + esc(DATA.mes)) +
-    '</span></div><span class="num rojo">' + pesos(m.debe) + '</span></div>').join('')
-    : '<div class="vacio">Todos al día.</div>';
-  $('ultimos').innerHTML = DATA.movimientos.slice(0, 5).map(filaMovimiento).join('') || '<div class="vacio">Sin movimientos.</div>';
+  const deben = DATA.integrantes.filter(m => m.cuotasDebe > 0);
+  $('s-inicio').innerHTML =
+    '<div class="kpis"><div class="card kpi"><span class="etq2">Saldo en caja</span><span class="num">' + pesos(DATA.caja.saldo) +
+    '</span><span class="det">Mercado Pago y efectivo</span></div><div class="card kpi"><span class="etq2">Fondo equipamiento</span><span class="num">' +
+    pesos(DATA.caja.fondo) + '</span><span class="det">Lo que sobra después de la cancha</span></div></div>' +
+    '<div class="card"><div class="arriba"><h2>Falta pagar ' + esc(mesDe(DATA.mes)) + '</h2><button class="link" data-ir="planilla">Ver planilla</button></div><div>' +
+    (deben.length ? deben.map(m => '<div class="fila"><span class="avatar">' + esc(iniciales(m.apodo)) + '</span><span class="cuerpo"><span class="nombre">' +
+      esc(m.apodo) + '</span></span><span class="rojo" style="font-weight:600">Debe ' + plural(m.cuotasDebe, 'cuota', 'cuotas') + '</span></div>').join('')
+      : '<div class="vacio">Todos al día.</div>') + '</div></div>' + aliasCard();
 }
 
 function planilla() {
-  let html = '<thead><tr><th>Integrante</th>' + DATA.meses.map((m, i) =>
-    '<th class="' + (i === DATA.mesIdx ? 'actual' : '') + '">' + esc(m) + '</th>').join('') + '</tr></thead><tbody>';
-  html += DATA.integrantes.map(m => '<tr><td>' + esc(m.apodo) + '</td>' + m.estados.map(e => '<td>' + celda(e) + '</td>').join('') + '</tr>').join('');
-  $('tabla').innerHTML = html + '</tbody>';
+  const idx = mesIdx();
+  let t = '<thead><tr><th scope="col">Integrante</th>' + DATA.meses.map((m, i) =>
+    '<th scope="col" class="' + (i === idx ? 'actual' : '') + '">' + esc(m.corto) + '</th>').join('') + '</tr></thead><tbody>';
+  t += DATA.integrantes.map(m => '<tr><th scope="row">' + esc(m.apodo) + (m.baja ? ' <span class="det">(baja)</span>' : '') + '</th>' +
+    m.estados.map(s => '<td>' + celda(s) + '</td>').join('') + '</tr>').join('');
+  $('s-planilla').innerHTML =
+    '<div class="card"><h2>Planilla de cuotas</h2><div class="leyenda">' +
+    '<span><i style="background:var(--azul)"></i>Pagado</span><span><i style="background:var(--naranja-claro);border:1.5px solid #D9561A"></i>Debe</span>' +
+    '<span><i style="background:var(--azul-claro);border:1.5px solid var(--azul)"></i>½ Media cuota</span><span><i style="background:#EEF1F5"></i>Sin vencer</span>' +
+    '<span><i style="height:2px;background:#9AA3B0"></i>No juega</span></div>' +
+    '<div class="grilla"><table>' + t + '</tbody></table></div></div>' +
+    '<div class="card"><h2>Valor de cada mes</h2><div class="tabla"><span class="h">Desde</span><span class="h der">Cuota</span><span class="h der">Cancha</span>' +
+    DATA.valores.map(v => '<span>' + esc(v.desde) + '</span><span class="der">' + pesos(v.cuota) + '</span><span class="der">' + pesos(v.cancha) + '</span>').join('') +
+    '</div><p class="ayuda">Si la cuota sube, los meses pagados por adelantado se recalculan y puede quedar una diferencia a pagar.</p></div>';
 }
 
 function miCuota(apodo) {
   const m = DATA.integrantes.find(x => x.apodo === apodo);
-  if (!m) { $('miCuota').innerHTML = ''; return; }
-  const debe = m.debe > 0;
-  const desde = Math.max(0, DATA.mesIdx - 1);
-  const tira = DATA.meses.slice(desde, desde + 6).map((mes, i) =>
-    '<div>' + celda(m.estados[desde + i]) + esc(mes) + '</div>').join('');
-  const pagos = m.pagos.length ? m.pagos.map(p => '<div class="fila"><div class="cuerpo"><span class="titulo">' + esc(p.fecha) +
-    '</span><span class="det">' + esc(p.medio) + '</span></div><span class="num">' + pesos(p.monto) + '</span></div>').join('')
-    : '<div class="vacio">No hay pagos cargados.</div>';
-  $('miCuota').innerHTML =
-    '<div class="estado ' + (debe ? 'debe' : 'ok') + '"><div style="font-size:13px;font-weight:600;letter-spacing:.08em;text-transform:uppercase">' +
-    (debe ? 'Para ponerte al día' : 'Estás al día') + '</div><span class="num">' + (debe ? pesos(m.debe) : '✓') + '</span><div>' +
-    (m.hasta ? 'Pagado hasta ' + esc(m.hasta) : 'Sin cuotas pagadas todavía') +
-    (m.adelantado > 0 ? ' · ' + pesos(m.adelantado) + ' adelantado' : '') + '</div></div>' +
-    '<div class="card"><h2>Mis meses</h2><div class="tira">' + tira + '</div></div>' +
-    (DATA.alias ? '<div class="card"><h2>Cómo pagar</h2><div class="alias"><b id="aliasTxt">' + esc(DATA.alias) +
-      '</b><button class="copiar" id="copiar">Copiar alias</button></div><p class="det" style="color:var(--gris2);font-size:13px;margin:10px 0 0">Transferí desde Mercado Pago: así tu pago se registra solo.</p></div>' : '') +
-    '<div class="card"><h2>Mis pagos</h2>' + pagos + '</div>';
-  const b = $('copiar');
-  if (b) b.onclick = () => {
-    const ok = () => { b.textContent = 'Copiado'; setTimeout(() => (b.textContent = 'Copiar alias'), 1500); };
-    if (navigator.clipboard) navigator.clipboard.writeText(DATA.alias).then(ok, () => seleccionar());
-    else seleccionar();
-  };
+  const cont = $('miCuota');
+  if (!m) { cont.innerHTML = ''; return; }
+  const desde = Math.max(0, mesIdx() - 1);
+  const debeMeses = m.estados.map((s, i) => (s.e === 'debe' ? DATA.meses[i].largo : null)).filter(Boolean);
+  const tira = DATA.meses.slice(desde, desde + 6).map((mes, i) => '<div>' + celda(m.estados[desde + i]) + esc(mes.corto) + '</div>').join('');
+  cont.innerHTML = (m.cuotasDebe > 0
+    ? '<div class="estado debe"><span class="etq" style="color:inherit">Para ponerte al día</span><span class="num">' + plural(m.cuotasDebe, 'cuota', 'cuotas') +
+      '</span><span>' + esc(debeMeses.join(', ')) + '</span></div>'
+    : '<div class="estado ok"><span class="etq" style="color:inherit">Estás al día</span><span class="num">✓</span><span>' +
+      (m.hasta ? 'Pagado hasta ' + esc(m.hasta) : 'Sin cuotas vencidas') + '</span></div>') +
+    '<div class="card"><h2>Mis meses</h2><div class="tira">' + tira + '</div></div>' + aliasCard();
+  activarCopiar(cont);
 }
 
-function seleccionar() {
-  const r = document.createRange(); r.selectNodeContents($('aliasTxt'));
-  const s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
-}
-
-function cuotaSelector() {
+function cuota() {
+  $('s-cuota').innerHTML = '<div class="card"><label for="quien">¿Quién sos?</label><select id="quien"><option value="">Elegí tu nombre</option>' +
+    DATA.integrantes.map(m => '<option>' + esc(m.apodo) + '</option>').join('') + '</select></div><div id="miCuota" style="display:flex;flex-direction:column;gap:16px"></div>';
   const sel = $('quien');
-  sel.innerHTML = '<option value="">Elegí tu nombre</option>' + DATA.integrantes.map(m => '<option>' + esc(m.apodo) + '</option>').join('');
   let guardado = '';
   try { guardado = localStorage.getItem('cajaHockeyQuien') || ''; } catch (e) {}
   if (guardado && DATA.integrantes.some(m => m.apodo === guardado)) sel.value = guardado;
   miCuota(sel.value);
-  sel.onchange = () => {
-    try { localStorage.setItem('cajaHockeyQuien', sel.value); } catch (e) {}
-    miCuota(sel.value);
-  };
+  sel.onchange = () => { try { localStorage.setItem('cajaHockeyQuien', sel.value); } catch (e) {} miCuota(sel.value); };
 }
 
 function caja() {
-  $('saldo2').textContent = pesos(DATA.caja.saldo);
-  $('adelantos').textContent = pesos(DATA.caja.adelantos);
-  $('movimientos').innerHTML = DATA.movimientos.map(filaMovimiento).join('') || '<div class="vacio">Sin movimientos.</div>';
+  const k = DATA.caja;
+  const total = Math.max(k.adelantos, 0) + Math.max(k.fondo, 0);
+  const pa = total ? Math.round(Math.max(k.adelantos, 0) / total * 100) : 0;
+  $('s-caja').innerHTML =
+    '<div class="card"><h2>De qué está hecho el saldo</h2><div class="apilada"><div style="width:' + pa + '%;background:var(--azul)"></div><div style="width:' + (total ? 100 - pa : 0) + '%;background:#A9C0F5"></div></div>' +
+    '<div class="fila" style="border:none;padding:4px 0"><span class="punto" style="background:var(--azul)"></span><span class="cuerpo" style="color:var(--gris)">Cuotas pagadas por adelantado</span><b class="der">' + pesos(k.adelantos) + '</b></div>' +
+    '<div class="fila" style="border:none;padding:4px 0"><span class="punto" style="background:#A9C0F5"></span><span class="cuerpo" style="color:var(--gris)">Disponible para equipamiento</span><b class="der">' + pesos(k.fondo) + '</b></div>' +
+    (DATA.cancha.pagada ? '' : '<p class="ayuda">Se reservan ' + pesos(DATA.cancha.costo) + ' para la cancha del mes.</p>') + '</div>' +
+    '<div class="card"><h2>Cobrado por mes</h2>' + (DATA.porMes.length ? DATA.porMes.map(p => '<div style="display:flex;flex-direction:column;gap:4px">' +
+      '<div class="arriba"><b>' + esc(p.mes.charAt(0).toUpperCase() + p.mes.slice(1)) + '</b><b class="der">' + pesos(p.cuotas + p.otros) + '</b></div>' +
+      '<span class="det">Cuotas ' + pesos(p.cuotas) + (p.otros ? ' · otros ' + pesos(p.otros) : '') + '</span></div>').join('') : '<div class="vacio">Sin cobros.</div>') + '</div>' +
+    '<div class="card"><h2>Gastos</h2><div>' + (DATA.gastos.length ? DATA.gastos.map(g => '<div class="fila"><span class="cuerpo"><span class="nombre">' + esc(g.concepto) +
+      '</span><span class="det">' + esc(g.fecha) + (g.destinatario ? ' · ' + esc(g.destinatario) : '') + '</span></span><span class="num" style="font-size:20px">' +
+      pesos(-g.monto) + '</span></div>').join('') : '<div class="vacio">Sin gastos.</div>') + '</div></div>' +
+    '<p class="ayuda" style="text-align:center">El detalle de quién pagó cuánto lo ve solo el administrador.</p>';
+}
+
+function pintarCabecera() {
+  const k = DATA.caja;
+  const temporada = DATA.meses.length ? DATA.meses[0].largo.split(' ')[1] : '';
+  if (seccion === 'inicio') $('cabecera').innerHTML = cabeceraInicio();
+  else if (seccion === 'planilla') $('cabecera').innerHTML = cabeceraSimple('Planilla de cuotas', 'Temporada ' + temporada);
+  else if (seccion === 'cuota') $('cabecera').innerHTML = cabeceraSimple('Mi cuota', 'Cuota de ' + mesDe(DATA.mes) + ': ' + pesos(DATA.cuotaMes));
+  else if (seccion === 'caja') $('cabecera').innerHTML = cabeceraSimple('Caja') +
+    '<div style="display:flex;flex-direction:column;gap:6px"><span class="etq">Saldo en caja</span><span class="num" style="font-size:56px;line-height:1">' + pesos(k.saldo) +
+    '</span><span class="sub" style="font-size:14px">Saldo inicial ' + pesos(k.saldoInicial) + ' + cobrado ' + pesos(k.cobrado) + ' − gastado ' + pesos(k.gastado) + '</span></div>';
+}
+
+function pintar() {
+  inicio(); planilla(); cuota(); caja();
+  if (seccion !== 'admin') pintarCabecera();
+  $('pie').innerHTML = 'Actualizado: ' + esc(DATA.actualizado) + ' · <button class="link" id="abrirAdmin" style="font-size:12px;min-height:32px">Administrar' +
+    (DATA.pendientes ? ' (' + DATA.pendientes + ')' : '') + '</button>';
+  $('abrirAdmin').onclick = abrirAdmin;
+  activarCopiar(document);
+  document.querySelectorAll('[data-ir]').forEach(b => b.onclick = () => mostrar(b.dataset.ir));
 }
 
 function mostrar(nombre) {
+  seccion = nombre;
+  document.body.classList.toggle('admin', nombre === 'admin');
   document.querySelectorAll('nav button').forEach(x => x.classList.toggle('activa', x.dataset.s === nombre));
   document.querySelectorAll('.seccion').forEach(s => s.classList.toggle('activa', s.id === 's-' + nombre));
+  if (nombre !== 'admin') pintarCabecera();
   window.scrollTo(0, 0);
 }
 document.querySelectorAll('nav button').forEach(b => b.onclick = () => mostrar(b.dataset.s));
 
-function pintar() {
-  $('actualizado').textContent = DATA.actualizado;
-  cabecera(); inicio(); planilla(); cuotaSelector(); caja();
+function activarCopiar(raiz) {
+  raiz.querySelectorAll('[data-copiar]').forEach(b => b.onclick = () => copiar(b.dataset.copiar, b));
+}
+function copiar(texto, boton) {
+  const listo = () => { const t = boton.textContent; boton.textContent = 'Copiado'; setTimeout(() => (boton.textContent = t), 1500); };
+  const plan = () => {
+    const a = document.createElement('textarea'); a.value = texto; document.body.appendChild(a); a.select();
+    try { document.execCommand('copy'); listo(); } catch (e) {} a.remove();
+  };
+  if (navigator.clipboard) navigator.clipboard.writeText(texto).then(listo, plan); else plan();
+}
+
+let toastTimer = null;
+function toast(texto, esError) {
+  const a = $('toast');
+  a.textContent = texto;
+  a.className = 'toast' + (esError ? ' error' : '');
+  a.style.display = 'block';
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { a.style.display = 'none'; }, esError ? 7000 : 4500);
 }
 
 // ---------------------------------------------------------------- administrador
-// El PIN se verifica en el servidor en cada acción. Si se elige "recordar",
-// queda guardado solo en este celular.
+// El PIN se verifica en el servidor en cada acción. Con "recordar", queda solo en este celular.
 const CLAVE_PIN = 'cajaHockeyPin';
 let pin = '';
 let ADMIN = null;
+let vista = 'inicio';
+let estadoForm = {};
 try { pin = localStorage.getItem(CLAVE_PIN) || ''; } catch (e) {}
 
-let avisoTimer = null;
-function aviso(texto, esError) {
-  const a = $('aviso');
-  a.textContent = texto;
-  a.className = 'aviso' + (esError ? ' error' : '');
-  a.style.display = 'block';
-  clearTimeout(avisoTimer);
-  avisoTimer = setTimeout(() => { a.style.display = 'none'; }, esError ? 7000 : 4500);
-}
-
-function servidor(funcion, args, alTerminar, boton) {
-  if (!window.google || !google.script) { aviso('El panel funciona solo dentro de la app publicada.', true); return; }
+function servidor(funcion, args, alTerminar, boton, alFallar) {
+  if (!window.google || !google.script) { toast('El panel funciona solo dentro de la app publicada.', true); return; }
   if (boton) boton.disabled = true;
   google.script.run
     .withSuccessHandler(r => { if (boton) boton.disabled = false; alTerminar(r); })
     .withFailureHandler(e => {
       if (boton) boton.disabled = false;
       const texto = (e && e.message) || String(e);
-      if (/PIN incorrecto|Todavía no hay PIN/.test(texto)) { olvidarPin(); pintarLogin(texto); return; }
-      if (!ADMIN) { pintarLogin(texto); return; }
-      aviso(texto, true);
+      if (/PIN incorrecto|Todavía no hay PIN/.test(texto)) { olvidarPin(); login(texto); return; }
+      if (!ADMIN) { login(texto); return; }
+      if (alFallar) alFallar(texto);
+      toast(texto, true);
     })[funcion].apply(null, args);
 }
 
@@ -318,93 +350,344 @@ function olvidarPin() {
   try { localStorage.removeItem(CLAVE_PIN); } catch (e) {}
 }
 
-function opciones(lista, elegido) {
-  return lista.map(v => '<option' + (v === elegido ? ' selected' : '') + '>' + esc(v) + '</option>').join('');
+function abrirAdmin() {
+  mostrar('admin');
+  if (ADMIN) ir('inicio');
+  else if (pin) {
+    cabeceraAdmin('Panel del administrador', 'Entrando…', null);
+    $('s-admin').innerHTML = '<div class="card"><div class="vacio">Entrando…</div></div>';
+    servidor('adminEntrar', [pin], r => { ADMIN = r; ir('inicio'); });
+  } else login();
 }
 
-function pintarLogin(error) {
-  $('s-admin').innerHTML = '<div class="card"><h2>Panel del administrador</h2><div class="campos">' +
-    '<p class="ayuda">Para cargar pagos en efectivo, asignar transferencias y agregar integrantes.</p>' +
-    '<div><label for="pin">PIN</label><input type="password" id="pin" inputmode="numeric" autocomplete="current-password" maxlength="12"></div>' +
+function cabeceraAdmin(titulo, sub, volverA) {
+  $('cabecera').innerHTML = '<div class="marca" style="justify-content:space-between"><div class="marca"><button class="volver" id="volver" aria-label="Volver">' + ICONO_VOLVER +
+    '</button><div><div class="titulo-h">' + esc(titulo) + '</div>' + (sub ? '<div class="sub">' + esc(sub) + '</div>' : '') + '</div></div>' +
+    (volverA === null && ADMIN ? '<button class="volver" id="salir" style="width:auto;padding:0 12px;font:inherit;font-size:14px">Salir</button>' : '') + '</div>';
+  $('volver').onclick = () => (volverA ? ir(volverA) : mostrar('inicio'));
+  if ($('salir')) $('salir').onclick = () => { olvidarPin(); mostrar('inicio'); toast('Saliste del panel.'); };
+}
+
+function login(error) {
+  mostrar('admin');
+  cabeceraAdmin('Panel del administrador', '', null);
+  $('s-admin').innerHTML = '<div class="card"><h2>Entrar al panel</h2>' +
+    '<p class="ayuda">Para cargar efectivo y gastos, asignar transferencias, dar altas y bajas y cambiar valores.</p>' +
+    '<div class="campo"><label for="pin">PIN</label><input type="password" id="pin" inputmode="numeric" autocomplete="current-password" maxlength="12"></div>' +
     '<label class="check"><input type="checkbox" id="recordar"> Recordar en este celular</label>' +
-    (error ? '<p class="error">' + esc(error) + '</p>' : '') +
-    '<button class="primario" id="entrar">Entrar</button></div></div>';
+    (error ? '<p class="error">' + esc(error) + '</p>' : '') + '<button class="prim" id="entrar">Entrar</button></div>';
   const entrar = () => {
     const p = $('pin').value.trim();
     if (!p) return;
     servidor('adminEntrar', [p], r => {
       pin = p; ADMIN = r;
-      if ($('recordar').checked) { try { localStorage.setItem(CLAVE_PIN, p); } catch (e) {} }
-      pintarAdmin();
+      if ($('recordar') && $('recordar').checked) { try { localStorage.setItem(CLAVE_PIN, p); } catch (e) {} }
+      ir('inicio');
     }, $('entrar'));
   };
   $('entrar').onclick = entrar;
   $('pin').onkeydown = e => { if (e.key === 'Enter') entrar(); };
 }
 
-function pintarAdmin() {
-  const a = ADMIN;
-  const pendientes = a.porRevisar.length ? a.porRevisar.map(t =>
-    '<div class="pendiente"><div class="arriba"><span class="titulo" style="font-weight:600">' + esc(t.nombre || 'Sin nombre') +
-    '</span><span class="num" style="font-size:19px">' + pesos(t.monto) + '</span></div>' +
-    '<div class="det" style="color:var(--gris2);font-size:13px">' + esc(t.fecha) + ' · ' + esc(t.medio) + '</div>' +
-    '<div class="det" style="color:var(--gris2);font-size:13px">' + esc(t.motivo) + '</div>' +
-    '<div class="asignar"><select data-op="' + esc(t.op) + '" aria-label="Integrante"><option value="">¿De quién es?</option>' + opciones(a.integrantes) +
-    '</select><button class="secundario" data-asignar="' + esc(t.op) + '">Asignar</button></div></div>').join('')
-    : '<div class="vacio">No hay transferencias sin asignar.</div>';
-
-  $('s-admin').innerHTML =
-    '<div class="card"><h2>Cargar pago</h2><div class="campos">' +
-      '<div><label for="pIntegrante">Integrante</label><select id="pIntegrante"><option value="">Elegí</option>' + opciones(a.integrantes) + '</select></div>' +
-      '<div class="dos"><div><label for="pMonto">Monto ($)</label><input type="number" id="pMonto" inputmode="numeric" min="1" step="1" value="' + esc(a.cuota || '') + '"></div>' +
-      '<div><label for="pFecha">Fecha</label><input type="date" id="pFecha" value="' + esc(a.hoy) + '" max="' + esc(a.hoy) + '"></div></div>' +
-      '<div class="dos"><div><label for="pImputacion">Es por</label><select id="pImputacion">' + opciones(['Cuota', 'Deuda anterior', 'Otro'], 'Cuota') + '</select></div>' +
-      '<div><label for="pMedio">Medio</label><select id="pMedio">' + opciones(['Efectivo', 'Transferencia bancaria', 'Transferencia Mercado Pago'], 'Efectivo') + '</select></div></div>' +
-      '<div><label for="pNota">Nota (opcional)</label><input type="text" id="pNota" maxlength="200"></div>' +
-      '<p class="ayuda">Las transferencias de Mercado Pago se cargan solas: no las cargues acá.</p>' +
-      '<button class="primario" id="guardarPago">Guardar pago</button></div></div>' +
-    '<div class="card"><h2>Transferencias sin asignar' + (a.pendientes ? ' (' + a.pendientes + ')' : '') + '</h2>' +
-      '<p class="ayuda">Mercado Pago no las pudo asociar a nadie. Al asignar una, los próximos pagos desde esa cuenta se cargan solos.</p>' +
-      pendientes + '</div>' +
-    '<div class="card"><h2>Agregar integrante</h2><div class="campos">' +
-      '<div><label for="iApodo">Apodo (como aparece en la planilla)</label><input type="text" id="iApodo" maxlength="30"></div>' +
-      '<div class="dos"><div><label for="iNombre">Nombre</label><input type="text" id="iNombre" maxlength="40"></div>' +
-      '<div><label for="iApellido">Apellido</label><input type="text" id="iApellido" maxlength="40"></div></div>' +
-      '<div><label for="iCuit">CUIT o CUIL (opcional)</label><input type="tel" id="iCuit" inputmode="numeric" maxlength="13"></div>' +
-      '<p class="ayuda">Con el CUIT, sus transferencias se cargan solas desde la primera.</p>' +
-      '<button class="primario" id="agregar">Agregar integrante</button></div></div>' +
-    '<p class="actualizado"><button class="link" id="salir">Salir del panel</button></p>';
-
-  const listo = r => { ADMIN = r.admin; DATA = r.datos; pintar(); pintarAdmin(); aviso(r.mensaje); };
-
-  $('guardarPago').onclick = () => {
-    const d = { apodo: $('pIntegrante').value, monto: $('pMonto').value, fecha: $('pFecha').value,
-      imputacion: $('pImputacion').value, medio: $('pMedio').value, nota: $('pNota').value };
-    if (!d.apodo) return aviso('Elegí el integrante.', true);
-    if (!(Number(d.monto) > 0)) return aviso('Revisá el monto.', true);
-    servidor('adminCargarPago', [pin, d], listo, $('guardarPago'));
+function listo(volverA) {
+  return r => {
+    ADMIN = r.admin; DATA = r.datos; pintar();
+    toast(r.mensaje);
+    ir(volverA || vista);
   };
-  document.querySelectorAll('[data-asignar]').forEach(b => b.onclick = () => {
-    const sel = document.querySelector('select[data-op="' + b.dataset.asignar + '"]');
-    if (!sel || !sel.value) return aviso('Elegí de quién es la transferencia.', true);
-    servidor('adminAsignar', [pin, b.dataset.asignar, sel.value], listo, b);
-  });
-  $('agregar').onclick = () => {
-    const d = { apodo: $('iApodo').value, nombre: $('iNombre').value, apellido: $('iApellido').value, cuit: $('iCuit').value };
-    if (!d.apodo.trim()) return aviso('Escribí el apodo.', true);
-    servidor('adminAgregarIntegrante', [pin, d], listo, $('agregar'));
-  };
-  $('salir').onclick = () => { olvidarPin(); pintarLogin(); mostrar('inicio'); };
 }
 
-$('abrirAdmin').onclick = () => {
-  mostrar('admin');
-  if (ADMIN) pintarAdmin();
-  else if (pin) {
-    $('s-admin').innerHTML = '<div class="card"><div class="vacio">Entrando…</div></div>';
-    servidor('adminEntrar', [pin], r => { ADMIN = r; pintarAdmin(); });
-  } else pintarLogin();
-};
+function ir(v, extra) {
+  vista = v;
+  const vistas = { inicio: vInicio, revisar: vRevisar, efectivo: vEfectivo, gasto: vGasto, integrantes: vIntegrantes,
+    integrante: vIntegrante, valores: vValores, whatsapp: vWhatsapp };
+  (vistas[v] || vInicio)(extra);
+  window.scrollTo(0, 0);
+}
+
+function opciones(lista, elegido, vacio) {
+  return (vacio ? '<option value="">' + esc(vacio) + '</option>' : '') +
+    lista.map(o => {
+      const v = typeof o === 'string' ? o : o.clave;
+      const t = typeof o === 'string' ? o : o.texto;
+      return '<option value="' + esc(v) + '"' + (v === elegido ? ' selected' : '') + '>' + esc(t) + '</option>';
+    }).join('');
+}
+const apodos = () => ADMIN.integrantes.filter(m => !m.baja).map(m => m.apodo);
+
+function vInicio() {
+  const a = ADMIN;
+  cabeceraAdmin('Panel del administrador', 'Mercado Pago: ' + DATA.actualizado, null);
+  const nRev = a.porRevisar.length, nCla = a.porClasificar.length;
+  $('s-admin').innerHTML =
+    '<h2 class="titulo-sec">Para revisar (' + (nRev + nCla) + ')</h2>' +
+    '<button class="tarjeta" data-ver="revisar"><span class="contador' + (nRev ? '' : ' cero') + '">' + nRev + '</span><span class="cuerpo"><span class="nombre">Transferencias sin asignar</span><span class="det">Mercado Pago no sabe de quién son</span></span>' + FLECHA + '</button>' +
+    '<button class="tarjeta" data-ver="revisar"><span class="contador' + (nCla ? '' : ' cero') + '">' + nCla + '</span><span class="cuerpo"><span class="nombre">Pagos por clasificar</span><span class="det">Montos que no son múltiplo de la cuota</span></span>' + FLECHA + '</button>' +
+    '<h2 class="titulo-sec">Cargar</h2><div class="kpis">' +
+    '<button class="tarjeta accion" data-ver="efectivo"><span class="icono"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="6" width="19" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/></svg></span><span class="nombre">Pago en efectivo</span></button>' +
+    '<button class="tarjeta accion" data-ver="gasto"><span class="icono"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 8h14l-1 12H6z"/><path d="M9 8V6a3 3 0 0 1 6 0v2"/></svg></span><span class="nombre">Gasto</span></button></div>' +
+    '<h2 class="titulo-sec">Configurar</h2><div class="lista">' +
+    '<button data-ver="integrantes"><span class="cuerpo"><span class="nombre">Integrantes</span><span class="det">' + plural(apodos().length, 'activo', 'activos') + ' · altas y bajas</span></span>' + FLECHA + '</button>' +
+    '<button data-ver="valores"><span class="cuerpo"><span class="nombre">Cuota y cancha</span><span class="det">Cuota ' + pesos(a.cuotaMes) + ' · cancha ' + pesos(a.canchaMes) + '</span></span>' + FLECHA + '</button>' +
+    '<button data-ver="whatsapp"><span class="cuerpo"><span class="nombre">Mensaje para WhatsApp</span><span class="det">Cancha del mes y quién falta</span></span>' + FLECHA + '</button></div>';
+  $('s-admin').querySelectorAll('[data-ver]').forEach(b => b.onclick = () => ir(b.dataset.ver));
+}
+
+function vRevisar() {
+  const a = ADMIN;
+  cabeceraAdmin('Para revisar', '', 'inicio');
+  const sinAsignar = a.porRevisar.length ? a.porRevisar.map((t, i) => '<div class="pendiente"><div class="arriba"><span class="nombre">' + esc(t.nombre || 'Sin nombre') +
+    '</span><span class="num" style="font-size:20px">' + pesos(t.monto) + '</span></div><span class="det">' + esc(t.fecha) + ' · ' + esc(t.medio) + ' · ' + esc(t.motivo) + '</span>' +
+    '<div class="linea-sel"><label class="solo-lector" for="asig' + i + '">Integrante</label><select id="asig' + i + '">' + opciones(apodos(), '', '¿De quién es?') +
+    '</select><button class="sec" data-asignar="' + i + '">Asignar</button></div><button class="link gris" style="align-self:flex-start" data-descartar="' + i + '">No es de la caja</button></div>').join('')
+    : '<div class="vacio">No hay transferencias sin asignar.</div>';
+  const clasificar = a.porClasificar.length ? a.porClasificar.map((p, i) => '<div class="pendiente"><div class="arriba"><span class="nombre">' + esc(p.apodo) +
+    '</span><span class="num" style="font-size:20px">' + pesos(p.monto) + '</span></div><span class="det">' + esc(p.fecha) + ' · ' + esc(p.medio) + '</span>' +
+    '<div class="opciones de2"><button class="prim" style="min-height:44px;font-size:15px" data-clas="' + i + '" data-imp="Cuota">Cuota (a cuenta)</button>' +
+    '<button class="opcion" data-clas="' + i + '" data-imp="No es de la caja">No es de la caja</button></div></div>').join('')
+    : '<div class="vacio">No hay pagos por clasificar.</div>';
+  $('s-admin').innerHTML = '<div class="card"><h2>Transferencias sin asignar</h2><p class="ayuda">Elegí de quién es. Si vino de Mercado Pago, la cuenta queda guardada y los próximos pagos desde ahí se cargan solos.</p>' +
+    sinAsignar + '</div><div class="card"><h2>Por clasificar</h2><p class="ayuda">Pagos de integrantes que no son múltiplo de la cuota. No suman a la caja hasta que elijas.</p>' + clasificar + '</div>';
+  $('s-admin').querySelectorAll('[data-asignar]').forEach(b => b.onclick = () => {
+    const t = a.porRevisar[b.dataset.asignar];
+    const sel = $('asig' + b.dataset.asignar);
+    if (!sel.value) return toast('Elegí de quién es la transferencia.', true);
+    servidor('adminAsignar', [pin, t.op, sel.value], listo('revisar'), b);
+  });
+  $('s-admin').querySelectorAll('[data-descartar]').forEach(b => b.onclick = () => {
+    servidor('adminDescartar', [pin, a.porRevisar[b.dataset.descartar].op], listo('revisar'), b);
+  });
+  $('s-admin').querySelectorAll('[data-clas]').forEach(b => b.onclick = () => {
+    const p = a.porClasificar[b.dataset.clas];
+    servidor('adminClasificar', [pin, p.fila, b.dataset.imp, { apodo: p.apodo, monto: p.monto }], listo('revisar'), b);
+  });
+}
+
+function botonesOpcion(nombre, lista, elegido) {
+  return lista.map(o => '<button type="button" class="opcion" data-op-grupo="' + nombre + '" data-valor="' + esc(o[0]) + '" aria-pressed="' + (o[0] === elegido) + '">' + esc(o[1]) + '</button>').join('');
+}
+function activarOpciones(raiz, nombre, alCambiar) {
+  raiz.querySelectorAll('[data-op-grupo="' + nombre + '"]').forEach(b => b.onclick = () => {
+    raiz.querySelectorAll('[data-op-grupo="' + nombre + '"]').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+    estadoForm[nombre] = b.dataset.valor;
+    if (alCambiar) alCambiar(b.dataset.valor);
+  });
+}
+
+function vEfectivo() {
+  const a = ADMIN;
+  cabeceraAdmin('Pago en efectivo', '', 'inicio');
+  estadoForm = { tipo: 'Cuota' };
+  $('s-admin').innerHTML = '<div class="card">' +
+    '<div class="campo"><label for="eQuien">Integrante</label><select id="eQuien">' + opciones(apodos(), '', 'Elegí') + '</select><span class="det" id="eDeuda" style="font-weight:600;margin-top:6px"></span></div>' +
+    '<div class="dos"><div class="campo"><label for="eMonto">Monto ($)</label><input type="number" id="eMonto" inputmode="numeric" min="1" step="1" value="' + esc(a.cuotaMes || '') + '"></div>' +
+    '<div class="campo"><label for="eFecha">Fecha</label><input type="date" id="eFecha" value="' + esc(a.hoy) + '" max="' + esc(a.hoy) + '"></div></div>' +
+    '<div><span class="lbl">Es por</span><div class="opciones">' + botonesOpcion('tipo', [['Cuota', 'Cuota'], ['Otro de la caja', 'Otra cosa de la caja'], ['No es de la caja', 'No es de la caja']], 'Cuota') + '</div></div>' +
+    '<div class="campo"><label for="eNota">Nota (opcional)</label><input type="text" id="eNota" maxlength="200"></div>' +
+    '<button class="prim" id="eGuardar">Guardar pago</button><p class="ayuda">Las transferencias de Mercado Pago se cargan solas: no hace falta cargarlas acá.</p></div>';
+  activarOpciones($('s-admin'), 'tipo');
+  $('eQuien').onchange = () => {
+    const m = a.integrantes.find(x => x.apodo === $('eQuien').value);
+    $('eDeuda').textContent = m && m.cuotasDebe ? 'Debe ' + plural(m.cuotasDebe, 'cuota', 'cuotas') + ' (' + pesos(m.deuda) + ')' : m ? 'Al día' : '';
+    $('eDeuda').className = 'det ' + (m && m.cuotasDebe ? 'rojo' : 'azul');
+  };
+  $('eGuardar').onclick = () => {
+    const d = { apodo: $('eQuien').value, monto: $('eMonto').value, fecha: $('eFecha').value, tipo: estadoForm.tipo, nota: $('eNota').value };
+    if (!d.apodo) return toast('Elegí el integrante.', true);
+    if (!(Number(d.monto) > 0)) return toast('Revisá el monto.', true);
+    servidor('adminCargarPago', [pin, d], listo('inicio'), $('eGuardar'));
+  };
+}
+
+function vGasto() {
+  cabeceraAdmin('Registrar gasto', '', 'inicio');
+  estadoForm = { archivoId: '', op: '' };
+  $('s-admin').innerHTML =
+    '<div class="card"><span class="titulo-sec">Paso 1 · Comprobante</span><label class="subir" for="gFoto">' +
+    '<svg aria-hidden="true" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h3l2-2h6l2 2h3v12H4z"/><circle cx="12" cy="13" r="3.5"/></svg>' +
+    '<b>Subir imagen del comprobante</b><span class="det">La captura del movimiento en Mercado Pago</span></label>' +
+    '<input id="gFoto" type="file" accept="image/*" class="solo-lector"><span class="det" id="gEstado" aria-live="polite"></span>' +
+    '<div class="linea-sel"><label class="solo-lector" for="gOp">N° de operación</label><input type="text" id="gOp" inputmode="numeric" placeholder="O escribí el N° de operación"><button class="sec" id="gBuscar">Buscar</button></div></div>' +
+    '<div id="gPaso2"></div>';
+  $('gFoto').onchange = () => {
+    const f = $('gFoto').files[0];
+    if (!f) return;
+    $('gEstado').textContent = 'Leyendo el comprobante…';
+    achicarImagen(f).then(datos => {
+      servidor('adminLeerComprobante', [pin, { datos: datos, tipo: 'image/jpeg' }], r => {
+        estadoForm.archivoId = r.archivoId || '';
+        if (r.op) { $('gEstado').textContent = 'Listo: operación encontrada.'; $('gOp').value = r.op; paso2Gasto(r.op, r.pago); }
+        else $('gEstado').textContent = r.mensaje || 'No pude leer el N°. Escribilo.';
+      }, null, () => { $('gEstado').textContent = ''; });
+    }).catch(() => { $('gEstado').textContent = 'No pude abrir la imagen. Escribí el N° de operación.'; });
+  };
+  $('gBuscar').onclick = () => {
+    const op = $('gOp').value.trim();
+    if (!op) return toast('Escribí el N° de operación.', true);
+    servidor('adminBuscarOperacion', [pin, op], r => paso2Gasto(r.op, r.pago), $('gBuscar'));
+  };
+}
+
+function paso2Gasto(op, pago) {
+  estadoForm.op = op;
+  $('gPaso2').innerHTML = '<div class="card"><span class="titulo-sec">Paso 2 · Datos de Mercado Pago</span>' +
+    '<div class="aviso-box info" style="font-weight:600">Operación ' + esc(op) + ' encontrada en tu cuenta</div>' +
+    '<div class="tabla" style="grid-template-columns:110px minmax(0,1fr)"><span class="h">Fecha</span><b>' + esc(pago.fecha) + '</b><span class="h">Monto</span><b>' + pesos(pago.monto) + '</b></div>' +
+    '<div class="campo"><label for="gDest">Destinatario</label><input type="text" id="gDest" maxlength="80" value="' + esc(pago.destinatario) + '"></div>' +
+    '<div class="campo"><label for="gTipo">Tipo</label><select id="gTipo">' + opciones(['Equipamiento', 'Cancha', 'Otro'], 'Equipamiento') + '</select></div>' +
+    '<div class="campo"><label for="gConcepto">Concepto</label><input type="text" id="gConcepto" maxlength="80" placeholder="Ej.: bochas, palos de arquero"></div>' +
+    '<button class="prim" id="gGuardar">Guardar gasto</button></div>';
+  $('gGuardar').onclick = () => {
+    const d = { op: estadoForm.op, tipo: $('gTipo').value, concepto: $('gConcepto').value, destinatario: $('gDest').value, archivoId: estadoForm.archivoId };
+    if (!d.concepto.trim()) return toast('Escribí el concepto.', true);
+    servidor('adminGuardarGasto', [pin, d], listo('inicio'), $('gGuardar'));
+  };
+}
+
+/** Achica la foto (máx. 1600 px, JPEG) antes de mandarla. */
+function achicarImagen(archivo) {
+  return new Promise((ok, mal) => {
+    const lector = new FileReader();
+    lector.onerror = mal;
+    lector.onload = () => {
+      const img = new Image();
+      img.onerror = mal;
+      img.onload = () => {
+        const escala = Math.min(1, 1600 / Math.max(img.width, img.height));
+        const c = document.createElement('canvas');
+        c.width = Math.round(img.width * escala); c.height = Math.round(img.height * escala);
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        ok(c.toDataURL('image/jpeg', 0.85).split(',')[1]);
+      };
+      img.src = lector.result;
+    };
+    lector.readAsDataURL(archivo);
+  });
+}
+
+function vIntegrantes() {
+  const a = ADMIN;
+  cabeceraAdmin('Integrantes', plural(apodos().length, 'activo', 'activos'), 'inicio');
+  const sub = m => m.auto ? 'Administrador · cuota automática' : m.baja ? 'Juega hasta ' + m.baja : m.cuentas ? plural(m.cuentas, 'cuenta registrada', 'cuentas registradas') : 'Sin cuenta registrada';
+  const estado = m => m.cuotasDebe ? '<span class="rojo" style="font-weight:600">Debe ' + m.cuotasDebe + '</span>' :
+    '<span class="azul" style="font-weight:600">' + (m.hasta ? 'Hasta ' + esc(mesDe(m.hasta).slice(0, 3)) : 'Al día') + '</span>';
+  $('s-admin').innerHTML =
+    '<div class="card"><h2>Agregar integrante</h2>' +
+    '<div class="campo"><label for="iApodo">Apodo (como aparece en la planilla)</label><input type="text" id="iApodo" maxlength="30"></div>' +
+    '<div class="dos"><div class="campo"><label for="iNombre">Nombre</label><input type="text" id="iNombre" maxlength="40"></div><div class="campo"><label for="iApellido">Apellido</label><input type="text" id="iApellido" maxlength="40"></div></div>' +
+    '<div class="dos"><div class="campo"><label for="iCuit">CUIT (opcional)</label><input type="tel" id="iCuit" inputmode="numeric" maxlength="13"></div><div class="campo"><label for="iAlta">Fecha en que se anota</label><input type="date" id="iAlta" value="' + esc(a.hoy) + '"></div></div>' +
+    '<div class="aviso-box info" id="iAviso"></div><button class="prim" id="iAgregar">Agregar</button>' +
+    '<p class="ayuda">Con el CUIT, sus transferencias se cargan solas desde la primera. Sin CUIT, la primera queda en "Para revisar" y la asignás.</p></div>' +
+    '<div class="card"><h2>Dar de baja</h2><div class="dos"><div class="campo"><label for="bQuien">Integrante</label><select id="bQuien">' + opciones(apodos(), '', 'Elegí') + '</select></div>' +
+    '<div class="campo"><label for="bMes">Último mes que juega</label><select id="bMes">' + opciones(a.mesesBaja, a.mesActual) + '</select></div></div>' +
+    '<p class="ayuda">Si debe, la deuda sigue figurando hasta que pague. Si adelantó meses, ese dinero queda en la caja.</p><button class="peligro" id="bBaja">Dar de baja</button></div>' +
+    '<div class="lista">' + a.integrantes.map((m, i) => '<button data-int="' + i + '"><span class="cuerpo"><span class="nombre">' + esc(m.apodo) + '</span><span class="det">' + esc(sub(m)) + '</span></span>' + estado(m) + FLECHA + '</button>').join('') + '</div>';
+  const avisoAlta = () => {
+    const v = $('iAlta').value;
+    const dia = v ? Number(v.slice(8, 10)) : 0;
+    $('iAviso').textContent = dia > 15 ? 'Se anota después del 15: ese mes paga media cuota (' + pesos(a.cuotaMes / 2) + ') y desde el siguiente la cuota completa.' : 'Se anota hasta el 15: paga el mes completo.';
+  };
+  avisoAlta();
+  $('iAlta').onchange = avisoAlta;
+  $('iAgregar').onclick = () => {
+    const d = { apodo: $('iApodo').value, nombre: $('iNombre').value, apellido: $('iApellido').value, cuit: $('iCuit').value, alta: $('iAlta').value };
+    if (!d.apodo.trim()) return toast('Escribí el apodo.', true);
+    servidor('adminAgregarIntegrante', [pin, d], listo('integrantes'), $('iAgregar'));
+  };
+  $('bBaja').onclick = () => {
+    if (!$('bQuien').value) return toast('Elegí el integrante.', true);
+    servidor('adminBaja', [pin, $('bQuien').value, $('bMes').value], listo('integrantes'), $('bBaja'));
+  };
+  $('s-admin').querySelectorAll('[data-int]').forEach(b => b.onclick = () => {
+    const m = a.integrantes[b.dataset.int];
+    $('s-admin').innerHTML = '<div class="card"><div class="vacio">Cargando…</div></div>';
+    servidor('adminIntegrante', [pin, m.apodo], r => ir('integrante', r), null, () => ir('integrantes'));
+  });
+}
+
+function vIntegrante(x) {
+  if (!x) return ir('integrantes');
+  cabeceraAdmin(x.apodo, x.auto ? 'Administrador' : '', 'integrantes');
+  const meses = x.meses.filter(s => s.e === 'debe');
+  const m = ADMIN.integrantes.find(i => i.apodo === x.apodo) || {};
+  $('s-admin').innerHTML =
+    '<div class="kpis"><div class="card kpi"><span class="etq2">Debe</span><span class="num rojo">' + pesos(x.deuda) + '</span></div><div class="card kpi"><span class="etq2">Adelantado</span><span class="num">' + pesos(x.adelantado) + '</span></div></div>' +
+    (meses.length ? '<div class="card"><h2>Meses que debe</h2>' + meses.map(s => '<div class="fila"><span class="cuerpo">' + esc(s.mes) + (s.medio ? ' (media cuota)' : '') + '</span><b class="rojo">faltan ' + pesos(s.falta) + '</b></div>').join('') + '</div>' : '') +
+    '<div class="card"><h2>Pagos</h2>' + (x.pagos.length ? x.pagos.map((p, i) => '<div class="pendiente"><div class="arriba"><span class="nombre">' + esc(p.fecha) + '</span><span class="num" style="font-size:20px">' + pesos(p.monto) + '</span></div>' +
+      '<span class="det">' + esc(p.medio) + '</span><div class="linea-sel"><label class="solo-lector" for="rc' + i + '">Imputación</label><select id="rc' + i + '">' +
+      opciones(['Cuota', 'Deuda anterior', 'Otro de la caja', 'No es de la caja'].concat(p.imputacion === 'Por clasificar' ? ['Por clasificar'] : []), p.imputacion) +
+      '</select><button class="sec" data-rc="' + i + '">Cambiar</button></div></div>').join('') : '<div class="vacio">Sin pagos cargados.</div>') + '</div>' +
+    (m.baja ? '<button class="sec" id="reactivar" style="min-height:48px">Volver a activo</button>' : '');
+  $('s-admin').querySelectorAll('[data-rc]').forEach(b => b.onclick = () => {
+    const p = x.pagos[b.dataset.rc];
+    const imp = $('rc' + b.dataset.rc).value;
+    if (imp === p.imputacion || imp === 'Por clasificar') return toast('Elegí una opción distinta.', true);
+    servidor('adminClasificar', [pin, p.fila, imp, { apodo: x.apodo, monto: p.monto }], r => {
+      ADMIN = r.admin; DATA = r.datos; pintar(); toast(r.mensaje);
+      servidor('adminIntegrante', [pin, x.apodo], d => ir('integrante', d));
+    }, b);
+  });
+  if ($('reactivar')) $('reactivar').onclick = () => servidor('adminBaja', [pin, x.apodo, ''], listo('integrantes'), $('reactivar'));
+}
+
+function vValores() {
+  const a = ADMIN;
+  cabeceraAdmin('Cuota y cancha', '', 'inicio');
+  estadoForm = { tipoValor: 'cuota' };
+  const ult = a.valores.length ? a.valores[a.valores.length - 1] : { cuota: 0, cancha: 0 };
+  $('s-admin').innerHTML =
+    '<div class="kpis"><div class="card kpi"><span class="etq2">Cuota de ' + esc(mesDe(a.mes)) + '</span><span class="num">' + pesos(a.cuotaMes) + '</span></div>' +
+    '<div class="card kpi"><span class="etq2">Cancha de ' + esc(mesDe(a.mes)) + '</span><span class="num">' + pesos(a.canchaMes) + '</span></div></div>' +
+    '<div class="card"><h2>Nuevo valor</h2><div><span class="lbl">Qué cambia</span><div class="opciones de2">' + botonesOpcion('tipoValor', [['cuota', 'Cuota'], ['cancha', 'Cancha']], 'cuota') + '</div></div>' +
+    '<div class="dos"><div class="campo"><label for="vMonto">Monto ($)</label><input type="number" id="vMonto" inputmode="numeric" min="1" step="1" value="' + esc(ult.cuota || '') + '"></div>' +
+    '<div class="campo"><label for="vDesde">Vigente desde</label><select id="vDesde">' + opciones(a.mesesValor, a.mesesValor[1] ? a.mesesValor[1].clave : '') + '</select></div></div>' +
+    '<button class="sec" id="vVer" style="min-height:48px">Ver qué cambia</button><div id="vImpacto"></div>' +
+    '<button class="prim" id="vGuardar">Guardar nuevo valor</button><p class="ayuda">Los meses anteriores a "vigente desde" no cambian.</p></div>' +
+    '<div class="card"><h2>Historial</h2><div class="tabla"><span class="h">Desde</span><span class="h der">Cuota</span><span class="h der">Cancha</span>' +
+    a.valores.map(v => '<span>' + esc(v.texto) + '</span><span class="der">' + pesos(v.cuota) + '</span><span class="der">' + pesos(v.cancha) + '</span>').join('') + '</div></div>';
+  activarOpciones($('s-admin'), 'tipoValor', t => { $('vMonto').value = t === 'cuota' ? (ult.cuota || '') : (ult.cancha || ''); $('vImpacto').innerHTML = ''; });
+  const datos = () => ({ tipo: estadoForm.tipoValor, monto: $('vMonto').value, desde: $('vDesde').value });
+  $('vVer').onclick = () => servidor('adminSimularValor', [pin, datos()], r => {
+    const lineas = r.afectados.map(x => esc(x.apodo) + ' tiene ese mes pagado: va a deber la diferencia de ' + pesos(x.diferencia) + '.');
+    lineas.push('Desde ' + esc(r.desde) + ' se necesitan ' + r.necesarios + ' cuotas para cubrir la cancha.');
+    $('vImpacto').innerHTML = '<div class="aviso-box alerta" style="display:flex;flex-direction:column;gap:6px"><b>Qué cambia con este valor</b>' + lineas.map(l => '<span>' + l + '</span>').join('') + '</div>';
+  }, $('vVer'));
+  $('vGuardar').onclick = () => servidor('adminNuevoValor', [pin, datos()], listo('valores'), $('vGuardar'));
+}
+
+function vWhatsapp() {
+  const a = ADMIN;
+  cabeceraAdmin('Mensaje para el grupo', '', 'inicio');
+  $('s-admin').innerHTML = '<div class="card"><h2>Qué incluir</h2>' +
+    '<label class="check"><input type="checkbox" id="wCancha" checked> Cancha del mes y cuánto falta</label>' +
+    '<label class="check"><input type="checkbox" id="wNombres" checked> Nombres de quienes faltan pagar</label>' +
+    '<label class="check"><input type="checkbox" id="wAlias" checked> Alias y link de la app</label></div>' +
+    '<div class="card"><h2>Vista previa</h2><div class="burbuja" id="wTexto"></div><div class="dos"><button class="sec" id="wCopiar" style="min-height:52px">Copiar</button>' +
+    '<a id="wAbrir" target="_blank" rel="noopener" style="min-height:52px;border-radius:12px;background:var(--azul);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:600;text-decoration:none">Abrir WhatsApp</a></div>' +
+    '<p class="ayuda">"Abrir WhatsApp" abre la app con el texto listo: elegís el grupo y enviás vos.</p></div>';
+  const armar = () => {
+    const c = DATA.cancha;
+    const deben = DATA.integrantes.filter(m => m.cuotasDebe > 0).map(m => m.apodo);
+    const lista = deben.length > 1 ? deben.slice(0, -1).join(', ') + ' y ' + deben[deben.length - 1] : deben.join('');
+    const l = ['Caja del hockey · ' + DATA.mes];
+    if ($('wCancha').checked) {
+      l.push('Cancha: ' + pesos(c.recaudado) + ' de ' + pesos(c.costo) + (c.faltan > 0 ? ' (faltan ' + pesos(c.faltan) + ').' : ' (cubierta).'));
+      l.push('Pagaron ' + c.pagaron + ' de ' + c.total + '.');
+    }
+    if ($('wNombres').checked) l.push(deben.length ? 'Falta pagar: ' + lista + '.' : 'Todos al día.');
+    if ($('wAlias').checked) {
+      if (DATA.alias) l.push('Alias: ' + DATA.alias + ' (transferí desde Mercado Pago y se carga solo).');
+      if (a.url) l.push('Ver todo: ' + a.url);
+    }
+    const texto = l.join('\n');
+    $('wTexto').textContent = texto;
+    $('wAbrir').href = 'https://wa.me/?text=' + encodeURIComponent(texto);
+    return texto;
+  };
+  ['wCancha', 'wNombres', 'wAlias'].forEach(id => $(id).onchange = armar);
+  armar();
+  $('wCopiar').onclick = () => copiar(armar(), $('wCopiar'));
+}
 
 pintar();
 </script>

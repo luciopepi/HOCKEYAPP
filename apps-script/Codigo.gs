@@ -3,7 +3,8 @@
  *
  * - Transferencias recibidas de integrantes reconocidos (por ID de Mercado Pago
  *   o CUIT) se cargan solas en Pagos. Si el monto es múltiplo de la cuota quedan
- *   como "Cuota"; si no, como "Revisar" para que las separes a mano.
+ *   como "Cuota"; si no, como "Por clasificar" (no suman hasta que el
+ *   administrador elija Cuota o "No es de la caja").
  * - Transferencias recibidas que no se pueden reconocer van a "Por revisar",
  *   solo si el monto puede ser de una cuota (no se copian ingresos personales).
  * - Transferencias enviadas al club por el monto de la cancha se cargan en Gastos.
@@ -23,8 +24,12 @@ const HOJA = {
 
 // Celdas y rangos de la hoja Config.
 const CELDA = {
-  CUOTA: 'B4',
-  COSTOS_CANCHA: 'A16:B25', // vigente desde | monto
+  CUOTA: 'B4',              // ya no se usa: ver hoja Valores
+  INICIO: 'B5',
+  SALDO_INICIAL: 'B6',
+  ALIAS: 'B7',
+  VENCIMIENTO: 'B10',
+  COSTOS_CANCHA: 'A16:B25', // ya no se usa: ver hoja Valores
   IMPORTAR_DESDE: 'B33',
   ID_CLUB: 'B34',
   ULTIMA_SYNC: 'B35',
@@ -33,7 +38,7 @@ const CELDA = {
 
 // Columnas (empezando en 1).
 const COL_PAGOS = { FECHA: 1, INTEGRANTE: 2, MONTO: 3, OPERACION: 9, TOTAL: 10 };
-const COL_INT = { APODO: 2, CUIT: 6, ID_MP: 10, TOTAL: 10 };
+const COL_INT = { APODO: 2, CUIT: 6, AUTO: 9, ID_MP: 10, ALTA: 11, ULTIMO: 12, TOTAL: 12 };
 const COL_GASTOS = { FECHA: 1, TIPO: 2, MONTO: 4, OPERACION: 7, TOTAL: 8 };
 const COL_REVISAR = { OPERACION: 8, TOTAL: 9 };
 
@@ -61,6 +66,7 @@ function onOpen() {
     .addItem('Guardar clave de Mercado Pago', 'guardarClave')
     .addItem('Activar sincronización cada 30 minutos', 'activarSincronizacion')
     .addItem('Desactivar sincronización automática', 'desactivarSincronizacion')
+    .addItem('Recalcular cuotas y resumen', 'recalcularAhora')
     .addSeparator()
     .addItem('Definir PIN del panel de administrador', 'definirPin')
     .addToUi();
@@ -104,6 +110,23 @@ function desactivarSincronizacion() {
     .forEach(t => ScriptApp.deleteTrigger(t));
 }
 
+function recalcularAhora() {
+  soloDesdePlanilla_();
+  recalcular_();
+  aviso_('Listo: cuotas y resumen recalculados.');
+}
+
+/** Cambios hechos a mano en la planilla: recalcula cuotas y resumen. */
+function onEdit(e) {
+  const hoja = e && e.range ? e.range.getSheet().getName() : '';
+  if ([HOJA.PAGOS, HOJA.GASTOS, HOJA.INTEGRANTES, HOJA_VALORES, HOJA.CONFIG].indexOf(hoja) === -1) return;
+  try {
+    recalcular_();
+  } catch (err) {
+    console.log('No se pudo recalcular: ' + err.message);
+  }
+}
+
 function sincronizarAhora() {
   soloDesdePlanilla_();
   const texto = sincronizar();
@@ -145,7 +168,11 @@ function sincronizar() {
     }
 
     proc.guardar();
-    limpiarCacheApp_();
+    try {
+      recalcular_();
+    } catch (e) {
+      texto += '. No se pudieron recalcular las cuotas: ' + e.message;
+    }
     config.getRange(CELDA.ULTIMA_SYNC).setValue(inicio);
     config.getRange(CELDA.RESULTADO).setValue(texto);
     return texto;
@@ -180,7 +207,8 @@ function procesarRecibidos_(ss, config, pagos, miId, desde, proc) {
   const hPagos = hoja_(ss, HOJA.PAGOS);
   const hInt = hoja_(ss, HOJA.INTEGRANTES);
   const hRev = hojaRevisar_(ss);
-  const cuota = Number(config.getRange(CELDA.CUOTA).getValue()) || 0;
+  asegurarEstructura_(ss);
+  const valores = leerValores_(ss);
 
   const enPagos = operaciones_(hPagos, COL_PAGOS.OPERACION);
   const yaVistos = operaciones_(hRev, COL_REVISAR.OPERACION);
@@ -240,10 +268,11 @@ function procesarRecibidos_(ss, config, pagos, miId, desde, proc) {
           filasRevisar.push(filaRevisar_(fecha, monto, medio, nombre, cuit, payerId, id,
             'Posible duplicado: ' + m.apodo + ' ya tiene un pago igual ese día en Pagos.'));
         } else {
+          const cuota = valorEn_(valores, 'cuota', primerDia_(soloDia_(fecha)));
           const esCuota = cuota > 0 && monto % cuota === 0;
-          filasPagos.push([soloDia_(fecha), m.apodo, monto, esCuota ? 'Cuota' : 'Revisar', medio, nombre,
+          filasPagos.push([soloDia_(fecha), m.apodo, monto, esCuota ? IMP.CUOTA : IMP.CLASIFICAR, medio, nombre,
             cuit, '', id, esCuota ? NOTA_AUTO
-              : NOTA_AUTO + '. El monto no es múltiplo de la cuota: separalo en filas (Cuota, Deuda anterior u Otro) con el mismo N° de operación.']);
+              : NOTA_AUTO + '. No es múltiplo de la cuota: clasificalo en el panel (Cuota o No es de la caja).']);
           yaCargados.add(clave);
           const neto = Number(get_(p, 'transaction_details.net_received_amount'));
           if (neto > 0 && neto < bruto) {
@@ -257,7 +286,7 @@ function procesarRecibidos_(ss, config, pagos, miId, desde, proc) {
           }
         }
         proc.marcar(id);
-      } else if (monto >= MONTO_MINIMO_REVISAR && (!cuota || monto <= MAX_CUOTAS_REVISAR * cuota)) {
+      } else if (monto >= MONTO_MINIMO_REVISAR && esMontoPosible_(valores, fecha, monto)) {
         filasRevisar.push(filaRevisar_(fecha, monto, medio, nombre, cuit, esPropia ? '' : payerId, id,
           esPropia ? 'Transferencia desde un banco: Mercado Pago no informa quién la envió.'
                    : 'No coincide con ningún integrante.'));
@@ -278,6 +307,12 @@ function procesarRecibidos_(ss, config, pagos, miId, desde, proc) {
       COL_GASTOS.TOTAL, [7]);
   }
   return { cargados: filasPagos.length, revisar: filasRevisar.length - reversiones, reversiones };
+}
+
+/** Un ingreso sin reconocer se copia solo si puede ser de cuotas (hasta 6). */
+function esMontoPosible_(valores, fecha, monto) {
+  const cuota = valorEn_(valores, 'cuota', primerDia_(soloDia_(fecha)));
+  return !cuota || monto <= MAX_CUOTAS_REVISAR * cuota;
 }
 
 function filaRevisar_(fecha, monto, medio, nombre, cuit, payerId, id, motivo) {
@@ -313,7 +348,7 @@ function procesarEnviados_(ss, config, pagos, miId, desde, proc) {
   const hRev = hojaRevisar_(ss);
   const enRevisar = operaciones_(hRev, COL_REVISAR.OPERACION);
   const yaCargados = clavesGastos_(hGastos);
-  const costos = config.getRange(CELDA.COSTOS_CANCHA).getValues();
+  const valores = leerValores_(ss);
   const filas = [];
   const filasRevisar = [];
   const dudosos = [];
@@ -330,7 +365,7 @@ function procesarEnviados_(ss, config, pagos, miId, desde, proc) {
       const id = String(p.id);
       const fecha = fechaPago_(p);
       const monto = Number(p.transaction_amount) || 0;
-      const costo = costoCancha_(costos, fecha);
+      const costo = valorEn_(valores, 'cancha', primerDia_(soloDia_(fecha)));
       if (!(costo > 0 && monto >= costo && monto <= costo * TOLERANCIA_CANCHA)) {
         filasRevisar.push([fecha, monto, 'Egreso', 'Transferencia Mercado Pago', 'Club Social y Deportivo Aberastain',
           '', '', id, 'Pago al club por un monto distinto del costo de la cancha: cargalo a mano en Gastos si corresponde.']);
@@ -376,13 +411,6 @@ function detectarClub_(hGastos, miId) {
   return null;
 }
 
-function costoCancha_(costos, fecha) {
-  let costo = 0;
-  costos.forEach(([desde, monto]) => {
-    if (desde instanceof Date && desde <= fecha && Number(monto) > 0) costo = Number(monto);
-  });
-  return costo;
-}
 
 // --------------------------------------------------------- probar conexión
 
@@ -556,7 +584,10 @@ function leerMiembros_(h) {
     const apodo = String(f[COL_INT.APODO - 1]).trim();
     if (!apodo) return;
     const ids = listaDe_(f[COL_INT.ID_MP - 1]);
-    lista.push({ apodo: apodo, fila: i + 2, cuits: listaDe_(f[COL_INT.CUIT - 1]), ids: ids, idMp: ids[0] || '' });
+    lista.push({ apodo: apodo, fila: i + 2, cuits: listaDe_(f[COL_INT.CUIT - 1]), ids: ids, idMp: ids[0] || '',
+      auto: String(f[COL_INT.AUTO - 1]).trim() === 'Sí',
+      alta: f[COL_INT.ALTA - 1] instanceof Date ? f[COL_INT.ALTA - 1] : null,
+      ultimoMes: f[COL_INT.ULTIMO - 1] instanceof Date ? f[COL_INT.ULTIMO - 1] : null });
   });
   return lista;
 }

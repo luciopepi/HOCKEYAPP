@@ -1,141 +1,97 @@
-# Sincronización con Mercado Pago y app del equipo
+# Caja Hockey: Mercado Pago, app del equipo y panel
 
-Script de Google Apps Script para la planilla **Caja Hockey**. Corre en los servidores de Google, gratis:
+Script de Google Apps Script para la planilla **Caja Hockey**. Corre gratis en los servidores de Google. El diseño acordado está en [`DISENO.md`](../DISENO.md).
 
-- [`Codigo.gs`](Codigo.gs) trae las transferencias de Mercado Pago cada 30 minutos.
-- [`Web.gs`](Web.gs) y [`App.html`](App.html) publican la **app del equipo**: una página para el celular con el estado de la caja.
-
-## Qué hace
-
-| Movimiento en Mercado Pago | Qué pasa en la planilla |
+| Archivo | Qué hace |
 |---|---|
-| Transferencia de un integrante reconocido, por un monto múltiplo de la cuota | Se agrega en **Pagos** como "Cuota" |
-| Transferencia de un integrante reconocido, por otro monto (ej. $21.000) | Se agrega en **Pagos** como "Revisar": cuenta para la caja, pero no para las cuotas hasta que la separes |
-| Transferencia que no se puede reconocer, por un monto posible de cuota (de $1.000 a 6 cuotas) | Va a **Por revisar** |
-| Transferencia desde un banco | Va a **Por revisar**: Mercado Pago no informa quién la envía |
-| Transferencia al club por el costo de la cancha (hasta 10% más por recargo) | Se agrega en **Gastos** como "Cancha" |
-| Transferencia al club por otro monto | Va a **Por revisar** como "Egreso" |
-| Devolución de un pago ya cargado | Aviso en **Por revisar** para que corrijas la fila |
-| Retención de Mercado Pago (si la hubiera) | Se agrega en **Gastos** como "Retenciones de Mercado Pago" |
-| Cualquier otro movimiento de tu cuenta | No se copia |
+| [`Codigo.gs`](Codigo.gs) | Trae las transferencias de Mercado Pago cada 30 minutos y arma el menú de la planilla |
+| [`Calculo.gs`](Calculo.gs) | Calcula cuotas, deudas y caja, y escribe las hojas Cuotas y Resumen |
+| [`Web.gs`](Web.gs) | La app del equipo y las acciones del panel del administrador |
+| [`App.html`](App.html) | Las pantallas de la app |
+| [`appsscript.json`](appsscript.json) | Permisos del script |
 
-- Las cuotas se cuentan por el monto transferido, antes de cualquier retención.
-- Cada pago se procesa una sola vez, aunque borres la fila. El control queda en la hoja oculta `_procesados`: no la borres.
-- Si un integrante ya tiene un pago del mismo monto ese día, el nuevo va a **Por revisar** como posible duplicado.
-- Las filas que carga el script quedan en negro con la nota "Cargado automáticamente desde Mercado Pago". Las cargadas a mano siguen en azul.
+## Instalar o actualizar (desde la computadora)
 
-## Instalación (una sola vez, unos 10 minutos, desde la computadora)
+1. Abrí la planilla → **Extensiones → Apps Script**.
+2. Reemplazá el contenido de `Código.gs`, `Web.gs` y `App.html` por el de esta carpeta.
+3. Agregá el archivo nuevo: **+ → Secuencia de comandos** → nombre `Calculo` → pegá [`Calculo.gs`](Calculo.gs).
+4. **Configuración del proyecto** → tildá "Mostrar el archivo de manifiesto" → reemplazá `appsscript.json` (suma el permiso de Drive para guardar comprobantes).
+5. Guardá todo (Ctrl+S).
+6. Recargá la planilla → **Caja Hockey → Recalcular cuotas y resumen**.
+   - Google pide autorizar de nuevo por el permiso nuevo. Elegí tu cuenta → Configuración avanzada → Ir a Caja Hockey → **Seleccionar todo** → Continuar. Después volvé a elegir el menú.
+   - La primera vez crea la hoja **Valores**, agrega las columnas de alta y baja en Integrantes y reescribe Cuotas y Resumen.
+7. Si todavía no lo hiciste:
+   - **Caja Hockey → Guardar clave de Mercado Pago**: pegá el Access Token de producción (empieza con `APP_USR-`). Lo pegás vos; no lo compartas.
+   - **Caja Hockey → Probar conexión con Mercado Pago**. Si las transferencias del 09/10 dicen "(ya está en Pagos)", poné 09/10/2026 en Config B33.
+   - **Caja Hockey → Activar sincronización cada 30 minutos**.
+8. **Caja Hockey → Definir PIN del panel de administrador** (6 a 12 números).
+9. Apps Script → **Implementar → Administrar implementaciones → lápiz → Versión: Nueva versión → Implementar**. El link de la app no cambia.
 
-> **Atajo:** [`CLAUDE_EN_CHROME.md`](CLAUDE_EN_CHROME.md) tiene un prompt para que la extensión Claude en Chrome haga la instalación y publique la app. Vos solo autorizás los permisos y pegás la clave.
+## La app
 
-1. **Abrí la planilla** Caja Hockey → menú **Extensiones → Apps Script**.
-2. **Pegá el código:** borrá lo que haya en `Código.gs` y pegá todo el contenido de [`Codigo.gs`](Codigo.gs). Guardá (ícono de disquete).
-3. **Permisos acotados:**
-   - En **Configuración del proyecto** (engranaje), tildá "Mostrar el archivo de manifiesto appsscript.json".
-   - Volvé al editor, abrí `appsscript.json` y reemplazá su contenido por el de [`appsscript.json`](appsscript.json). Guardá.
-   - Así el script solo puede tocar esta planilla y conectarse a Mercado Pago. No tiene acceso a tu Gmail ni a tu Drive.
-4. **Recargá la planilla.** Aparece el menú **Caja Hockey**.
-5. **Caja Hockey → Guardar clave de Mercado Pago:**
-   - Pegá el **Access Token** de producción: Mercado Pago Developers → Tus integraciones → HockeyCaja → Credenciales de producción. Empieza con `APP_USR-`.
-   - La primera vez Google pide permiso. Va a decir "Google no verificó esta app", y es normal: la app es tuya.
-   - Tocá **Configuración avanzada → Ir a … (no seguro)** y aceptá **todos** los permisos.
-   - La clave queda guardada en tu usuario: otros editores de la planilla no la ven.
-   - **No la pegues en la planilla, en un chat ni en WhatsApp.**
-6. **Caja Hockey → Probar conexión con Mercado Pago.**
-   - Muestra las transferencias de los últimos 7 días, con el integrante reconocido y si ya están en Pagos.
-   - Si las del 09/10 dicen **"(ya está en Pagos)"**, cambiá **Config B33** ("Importar pagos desde") a **09/10/2026**. Así no se pierde ningún pago de ese día.
-   - Si no lo dicen, dejá B33 en 10/10/2026 y cargá a mano los pagos del 09/10 que falten.
-7. **Caja Hockey → Activar sincronización cada 30 minutos.** Listo.
+**Sin ingresar** (lo que ve el equipo): cancha del mes, saldo, quién falta pagar (en cuotas, sin montos), planilla de cuotas, "Mi cuota" y la caja con los gastos.
 
-## App del equipo (para el celular)
+**Panel del administrador** (al pie: **Administrar**, con PIN):
 
-Página de solo lectura. Muestra la cancha del mes, quién falta pagar, la planilla de cuotas, "Mi cuota" y los movimientos. **No muestra** CUIT, cuentas, números de operación ni notas.
-
-### Publicarla (una sola vez, desde la computadora)
-
-1. En el editor de Apps Script, **+ → Script**, nombre `Web`. Pegá el contenido de [`Web.gs`](Web.gs).
-2. **+ → HTML**, nombre `App`. Pegá el contenido de [`App.html`](App.html). Guardá.
-3. **Implementar → Nueva implementación:**
-   - Tipo: **Aplicación web** (engranaje junto a "Seleccionar tipo").
-   - Ejecutar como: **Yo**.
-   - Quién tiene acceso: **Cualquier persona**.
-4. **Implementar** y copiá la URL que termina en `/exec`. Ese es el link de la app.
-
-### Compartirla
-
-- Mandá el link `/exec` por WhatsApp (conviene fijarlo en el grupo).
-- No hace falta cuenta de Google ni instalar nada.
-- Cada uno elige su nombre en **Mi cuota** y queda guardado en su celular.
-
-### Instalarla en el celular (ícono en la pantalla de inicio)
-
-| Celular | Pasos |
+| Pantalla | Para qué |
 |---|---|
-| Android (Chrome) | Abrir el link → menú **⋮** → **Agregar a la pantalla principal** |
-| iPhone (Safari) | Abrir el link → **Compartir** (cuadrado con flecha) → **Agregar a inicio** |
+| Para revisar | Asignar transferencias sin dueño (se guarda la cuenta y las próximas entran solas) o marcarlas "No es de la caja". Clasificar los pagos que no son múltiplo de la cuota |
+| Pago en efectivo | Cuota, otra cosa de la caja o algo que no es de la caja |
+| Gasto | Subís la imagen del comprobante de Mercado Pago; la app lee el N° de operación y trae monto, fecha y destinatario. Si no lo lee, lo escribís |
+| Integrantes | Alta (después del día 15 paga media cuota ese mes) y baja con el último mes que juega. En cada integrante, sus pagos y la opción de reclasificarlos |
+| Cuota y cancha | Valor nuevo con "vigente desde" y aviso de quién va a deber diferencia |
+| Mensaje para WhatsApp | Arma el texto con la cancha del mes y quién falta, para copiar o abrir WhatsApp |
 
-### A tener en cuenta
+Instalarla en el celular: abrí el link → Android: menú ⋮ → **Agregar a la pantalla principal**; iPhone: Compartir → **Agregar a inicio**.
 
-- Arriba aparece un aviso de Google ("Esta aplicación fue creada por otro usuario"). Es normal en las apps de Apps Script.
-- Los pagos sincronizados aparecen al instante en la app. Los cambios hechos a mano en la planilla, en hasta 5 minutos.
-- Si actualizás `Web.gs` o `App.html`: **Implementar → Administrar implementaciones → editar (lápiz) → Versión: Nueva versión → Implementar**. El link no cambia.
-- Cualquiera con el link ve los apodos, las cuotas y los montos. No lo publiques fuera del grupo.
+## La planilla
 
-## Panel del administrador (en la app)
+| Hoja | Quién la escribe |
+|---|---|
+| Pagos | La sincronización, el panel o vos. Imputación: **Cuota**, **Deuda anterior**, **Otro de la caja** (suman), **No es de la caja** y **Por clasificar** (no suman) |
+| Gastos | La sincronización (cancha), el panel o vos |
+| Integrantes | El panel o vos. Columna K: fecha de alta. Columna L: último mes (baja). Varios CUIT en una celda, separados por coma |
+| Valores | El panel o vos. Cada fila cambia la cuota, la cancha o las dos desde ese mes |
+| Cuotas y Resumen | **La app**: se reescriben solas al sincronizar, al usar el panel o al editar la planilla. No las edites a mano |
+| Por revisar | La sincronización. Lo resolvés desde el panel |
 
-Desde la app, con un PIN, podés:
+Cómo se calcula (DISENO.md, decisiones 10 a 12, 22 y 25):
 
-- **Cargar pago:** efectivo u otro pago que no llega por Mercado Pago (por ejemplo, Alfredo).
-- **Asignar transferencias sin asignar:** las que quedaron en **Por revisar**. Elegís de quién es y pasa a Pagos. Además se guarda el CUIT y el ID de Mercado Pago de esa cuenta en Integrantes: **los próximos pagos desde ahí se cargan solos**. Si había otras pendientes de la misma cuenta, se asignan también.
-- **Agregar integrante:** se suma al final de Integrantes y a la planilla de Cuotas. Con el CUIT, sus transferencias se cargan solas desde la primera.
+- Cada mes vale la cuota vigente ese mes. Los pagos "Cuota" son saldo a favor y se descuentan mes a mes: si la cuota sube, lo adelantado puede quedar corto.
+- Un mes pagado en parte figura como "Debe". Cuánto falta lo ven el administrador y el panel.
+- El administrador (Cuota automática = Sí) está siempre al día.
 
-### Activarlo (una vez, desde la computadora)
+## Sincronización con Mercado Pago
 
-1. Pegá las versiones nuevas de `Codigo.gs`, `Web.gs` y `App.html` en Apps Script y guardá.
-2. **Implementar → Administrar implementaciones → lápiz → Versión: Nueva versión → Implementar.** El link de la app no cambia.
-3. Recargá la planilla → **Caja Hockey → Definir PIN del panel de administrador** (6 a 12 números).
-4. En la app, al pie de la pantalla: **Administrar** → PIN. Tildá "Recordar en este celular" solo en tu celular.
+| Movimiento | Qué pasa |
+|---|---|
+| Transferencia de un integrante reconocido, múltiplo de la cuota | Pagos como "Cuota" |
+| Transferencia de un integrante reconocido, otro monto | Pagos como "Por clasificar" (no suma hasta que la clasifiques) |
+| Transferencia sin reconocer (hasta 6 cuotas) o desde un banco | Por revisar |
+| Transferencia al club por el costo de la cancha (hasta 10% más) | Gastos como "Cancha" |
+| Devolución de un pago ya cargado | Aviso en Por revisar |
 
-### Seguridad del panel
-
-- El PIN se verifica en el servidor en cada acción. Se guarda cifrado (hash con sal) en las propiedades del script.
-- Después de 5 PIN incorrectos, el panel se bloquea 15 minutos para todos.
-- Cualquiera con el PIN puede cargar pagos: no lo compartas. Para cambiarlo, repetí "Definir PIN".
-- El panel no muestra CUIT ni números de cuenta.
-- Las funciones del menú (activar o desactivar la sincronización, probar conexión) solo funcionan desde la planilla, no desde la app.
-
-## Uso diario
-
-- No hace falta hacer nada: cada 30 minutos se cargan los pagos nuevos.
-- En **Config** ves la última sincronización y su resultado (filas 35 y 36).
-- Revisá de vez en cuando:
-  - **Por revisar.** Si un ingreso es una cuota, cargalo en Pagos con el integrante y **copiá el N° de operación**.
-  - **Pagos con Imputación "Revisar".** Separá el monto en filas (Cuota, Deuda anterior u Otro), todas con el mismo N° de operación.
-- Para cargar algo ya: **Caja Hockey → Sincronizar ahora**.
-
-## Cómo reconoce a cada integrante
-
-- Primero por el **ID de Mercado Pago** (columna J de Integrantes). El script lo aprende solo con el primer pago de cada uno.
-- Si no lo tiene, por el **CUIT** (columna F).
-- Para un integrante nuevo, agregalo desde el panel de la app (o en Integrantes, con su fila en Cuotas). Si no sabés su CUIT, la primera transferencia va a **Por revisar**: asignala desde el panel y las siguientes se cargan solas.
-- Si alguien paga desde dos cuentas, poné los dos CUIT en la misma celda separados por coma.
+- Reconoce a cada integrante por su ID de Mercado Pago o su CUIT.
+- Cada pago se procesa una sola vez (hoja oculta `_procesados`: no la borres).
+- Las filas automáticas quedan en negro; las cargadas a mano o desde el panel, en azul.
 
 ## Seguridad
 
-- Compartí la planilla con el equipo **solo como Lector o Comentarista, nunca como Editor**. Un editor puede cambiar el código que corre con tu clave de Mercado Pago.
-- La planilla tiene CUIT y cuentas de los integrantes: para el grupo usá el resumen, no la planilla completa.
+- Compartí la planilla solo como Lector o Comentarista. Un editor puede cambiar el código que corre con tu clave.
+- El PIN se verifica en el servidor en cada acción y se guarda cifrado. Después de 5 PIN incorrectos, el panel se bloquea 15 minutos.
+- La app pública no muestra CUIT, cuentas, números de operación, notas ni cuánto pagó cada uno.
+- Los comprobantes de gastos quedan en tu Drive, en la carpeta "Caja Hockey - Comprobantes". No son públicos.
+- Las funciones del menú solo funcionan desde la planilla, no desde la app.
 
 ## Límites conocidos
 
-- **Transferencias desde bancos:** Mercado Pago no informa quién las envía. Conviene pedir que paguen desde Mercado Pago.
-- **Efectivo:** se carga desde el panel de la app (o a mano en Pagos).
-- **Demora:** los pagos aparecen con hasta 30 minutos de demora. Mercado Pago no avisa al instante de las transferencias recibidas.
-- **Links de pago:** el script todavía no lee los pagos hechos con link de pago (solo transferencias).
-- **Clave vencida:** si Mercado Pago la renueva o la revocás, el resultado en Config dice "rechazó la clave (401)". Guardá la nueva desde el menú.
+- **Transferencias desde bancos:** Mercado Pago no informa quién las envía. Van a Por revisar y las asignás.
+- **Demora:** los pagos aparecen con hasta 30 minutos de demora. Los cambios a mano en la planilla, en hasta 5 minutos en la app.
+- **Clave vencida:** si Mercado Pago la renueva, el resultado en Config dice "rechazó la clave (401)". Guardá la nueva desde el menú.
 
 ## Pruebas
 
-`test/` tiene un simulador de Google Sheets y de la API de Mercado Pago con 124 casos, incluidos la app del equipo y el panel del administrador. Para correrlo:
+`test/` simula Google Sheets, Drive y la API de Mercado Pago (156 casos):
 
 ```
 TZ=America/Argentina/San_Juan node apps-script/test/run.js

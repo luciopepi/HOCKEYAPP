@@ -81,6 +81,7 @@ class Sheet {
   getMaxRows() { return this.maxRows; }
   getMaxColumns() { return this.maxCols; }
   setFrozenRows(n) { this.frozen = n; return this; }
+  setConditionalFormatRules(r) { this.cfRules = r; return this; }
   hideSheet() { this.hidden = true; return this; }
   insertColumnsAfter(after, n) { this.maxCols += n; return this; }
   insertRowsAfter(after, n) { this.maxRows += n; return this; }
@@ -215,6 +216,9 @@ class Range {
   setValue(v) { this.forEachCell((x, i, j) => writeCell(this.sheet, this.r + i, this.c + j, v)); return this; }
   setNumberFormat(f) { this.forEachCell(x => { x.fmt = f; }); return this; }
   setNote(n) { this.forEachCell(x => { x.note = n; }); return this; }
+  getNote() { const x = this.sheet.cell(this.r, this.c); return (x && x.note) || ''; }
+  clearContent() { this.forEachCell(x => { x.v = ''; delete x.formula; delete x.formulaValue; }); return this; }
+  setDataValidation(rule) { this.forEachCell(x => { x.validation = rule; }); return this; }
   setFontColor(c) { this.forEachCell(x => { x.color = c; }); return this; }
   setFontFamily(f) { this.forEachCell(x => { x.font = f; }); return this; }
   setFontWeight() { return this; }
@@ -315,7 +319,7 @@ function makeMP(world, opts) {
   };
 }
 function resp(code, body) {
-  const t = JSON.stringify(body);
+  const t = typeof body === 'string' ? body : JSON.stringify(body);
   return { getResponseCode: () => code, getContentText: () => t };
 }
 
@@ -323,6 +327,33 @@ function resp(code, body) {
 /**
  * Create a fresh "spreadsheet + MP account + Apps Script runtime" and load Codigo.gs in it.
  */
+// Google Drive: carpeta, subidas (con o sin OCR), exportar texto y borrar.
+function driveFake(world, url, params) {
+  world.drive = world.drive || { files: {}, n: 0, calls: [] };
+  const D = world.drive;
+  const method = ((params && params.method) || 'get').toLowerCase();
+  D.calls.push(method + ' ' + url);
+  if ((params && params.headers && params.headers.Authorization) !== 'Bearer drive-token') return resp(401, { error: 'no auth' });
+  if (method === 'post' && /\/upload\/drive\/v3\/files/.test(url)) {
+    const id = 'arch' + (++D.n);
+    const texto = Buffer.from(params.payload.map(b => b & 255)).toString('latin1');
+    D.files[id] = { ocr: /google-apps\.document/.test(texto), parents: /"parents":\["([^"]+)"/.exec(texto) };
+    return resp(200, { id });
+  }
+  if (method === 'post' && /\/drive\/v3\/files$/.test(url)) { const id = 'carpeta' + (++D.n); D.files[id] = { folder: true }; return resp(200, { id }); }
+  const exp = /\/drive\/v3\/files\/([^/?]+)\/export/.exec(url);
+  if (exp) return resp(200, world.ocrTexto || '');
+  const del = /\/drive\/v3\/files\/([^/?]+)$/.exec(url);
+  if (method === 'delete' && del) { delete D.files[del[1]]; return resp(204, {}); }
+  return resp(404, { error: 'drive ' + url });
+}
+
+function chain(tipo) {
+  const calls = [];
+  const obj = new Proxy({}, { get: (t, k) => (k === 'build' ? () => ({ tipo, calls }) : (...a) => { calls.push([k, a]); return obj; }) });
+  return obj;
+}
+
 function createWorld(opts) {
   const world = {
     me: opts.me, token: 'APP_USR-test', payments: opts.payments || [],
@@ -357,10 +388,11 @@ function createWorld(opts) {
     console: { log: (...a) => world.consoleOut.push(a.join(' ')), error: (...a) => world.consoleOut.push('ERR ' + a.join(' ')), warn: (...a) => world.consoleOut.push('WARN ' + a.join(' ')) },
     SpreadsheetApp: {
       getActive: () => ss, getActiveSpreadsheet: () => ss, flush: () => {},
+      newConditionalFormatRule: () => chain('cf'), newDataValidation: () => chain('dv'),
       CopyPasteType: { PASTE_FORMAT: 'PASTE_FORMAT', PASTE_NORMAL: 'PASTE_NORMAL' },
       getUi: () => { if (opts.ui) return opts.ui; throw new Error('Cannot call SpreadsheetApp.getUi() from this context.'); },
     },
-    UrlFetchApp: { fetch: makeMP(world, opts.mp || {}) },
+    UrlFetchApp: { fetch: ((mp) => (url, params) => (/googleapis\.com/.test(url) ? driveFake(world, url, params) : mp(url, params)))(makeMP(world, opts.mp || {})) },
     PropertiesService: { getScriptProperties: () => ({ getProperty: k => (world.scriptProps[k] == null ? null : world.scriptProps[k]), setProperty: (k, v) => { world.scriptProps[k] = String(v); } }), getUserProperties: () => ({ getProperty: k => (k === 'MP_ACCESS_TOKEN' ? world.token : null), setProperty: (k, v) => { world.token = v; } }) },
     CacheService: { getScriptCache: () => ({
       get: k => (world.cache && world.cache[k]) || null,
@@ -374,8 +406,15 @@ function createWorld(opts) {
       DigestAlgorithm: { SHA_256: 'sha256' }, Charset: { UTF_8: 'utf8' },
       computeDigest: (alg, text) => [...require('crypto').createHash(alg).update(String(text), 'utf8').digest()].map(b => (b > 127 ? b - 256 : b)),
       base64Encode: bytes => Buffer.from(bytes.map(b => b & 255)).toString('base64'),
+      base64Decode: str => [...Buffer.from(String(str), 'base64')].map(b => (b > 127 ? b - 256 : b)),
+      newBlob: (data, tipo, nombre) => {
+        const bytes = Array.isArray(data) ? data : [...Buffer.from(String(data), 'utf8')].map(b => (b > 127 ? b - 256 : b));
+        return { getBytes: () => bytes.slice(), getContentType: () => tipo || 'text/plain', getName: () => nombre || 'blob' };
+      },
     },
     ScriptApp: {
+      getOAuthToken: () => 'drive-token',
+      getService: () => ({ getUrl: () => 'https://script.google.com/macros/s/TEST/exec' }),
       newTrigger: h => { const t = { h }; const b = { timeBased: () => b, everyMinutes: () => b, create: () => { world.triggers.push(t); return t; } }; return b; },
       getProjectTriggers: () => world.triggers.map(t => ({ getHandlerFunction: () => t.h })),
       deleteTrigger: () => {},
@@ -399,8 +438,10 @@ function createWorld(opts) {
   world.setNow = iso => ctx.__setNow(Date.parse(iso));
   const src = fs.readFileSync(opts.codePath, 'utf8');
   vm.runInContext(src, ctx, { filename: 'Codigo.gs' });
-  const web = path.join(path.dirname(opts.codePath), 'Web.gs');
-  if (fs.existsSync(web)) vm.runInContext(fs.readFileSync(web, 'utf8'), ctx, { filename: 'Web.gs' });
+  ['Calculo.gs', 'Web.gs'].forEach(f => {
+    const extra = path.join(path.dirname(opts.codePath), f);
+    if (fs.existsSync(extra)) vm.runInContext(fs.readFileSync(extra, 'utf8'), ctx, { filename: f });
+  });
   world.ctx = ctx;
   world.run = (fn) => vm.runInContext(fn + '()', ctx);
   world.sheet = n => world.sheets.get(n);

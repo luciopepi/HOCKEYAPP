@@ -93,6 +93,7 @@ function seed(world, o = {}) {
   for (let r = 1; r <= 36; r++) cfg.push(['', '']);
   cfg[0] = ['Parámetro', 'Valor'];
   cfg[3] = ['Cuota mensual ($)', 15000];
+  cfg[4] = ['Inicio de la temporada', { value: art('2026-10-01 00:00'), fmt: 'mmm yyyy' }];
   cfg[15] = [{ value: art('2026-10-01 00:00'), fmt: 'mmm yyyy' }, 120000];
   cfg[16] = [{ value: art('2026-11-01 00:00'), fmt: 'mmm yyyy' }, 150000];
   cfg[32] = ['Importar pagos desde', { value: o.importarDesde || art('2026-10-10 00:00'), fmt: 'dd/mm/yyyy' }];
@@ -110,7 +111,7 @@ function newWorld(payments, o = {}) {
 
 function snapshot(w) {
   const s = {};
-  for (const [n, sh] of w.sheets) if (n !== 'Config') s[n] = JSON.stringify(sh.rows(1)); // Config B35/B36 change every run
+  for (const [n, sh] of w.sheets) if (n !== 'Config' && n !== 'Resumen') s[n] = JSON.stringify(sh.rows(1)); // Config B35/B36 change every run
   return s;
 }
 function sync(w, when) {
@@ -418,7 +419,7 @@ section('N1 member pays an amount that is not a multiple of the cuota');
   err = sync(w, '2026-10-10 12:00');
   check('sync does not throw', !err, err && err.stack);
   const r = findOp(rowsOf(w, 'Pagos'), 8, 4101);
-  check('21000 -> Pagos with Imputación "Revisar"', r.length === 1 && r[0][3] === 'Revisar', JSON.stringify(r));
+  check('21000 -> Pagos with Imputación "Por clasificar"', r.length === 1 && r[0][3] === 'Por clasificar', JSON.stringify(r));
 }
 
 section('N2 large personal income and personal non-transfer movements are not copied');
@@ -477,88 +478,9 @@ section('N5 sender name that looks like a formula is stored as text');
   check('no formulas created', w.formulas.length === 0, 'formulas: ' + w.formulas.join(' | '));
 }
 
-section('W1 app del equipo: datos sin información personal');
-{
-  const w = newWorld(basePayments());
-  w.addSheet('Resumen', [
-    ['Caja Hockey', ''],
-    ['', ''],
-    ['Mes actual', { value: art('2026-10-01 00:00'), fmt: 'mmm yyyy' }],
-    ['', ''], ['', ''],
-    ['Integrantes con el mes pago', 3],
-    ['Integrantes en total', 5],
-    ['Integrantes necesarios para cubrir la cancha', 8],
-    ['Recaudado para la cancha ($)', 45000],
-    ['Costo de la cancha ($)', 120000],
-    ['Faltan ($)', 75000],
-    ['Cobertura', 0.375],
-    ['Vence el', { value: art('2026-10-10 00:00'), fmt: 'dd/mm/yyyy' }],
-    ['Cancha del mes pagada', 'Sí'],
-    ['', ''], ['', ''], ['', ''], ['', ''],
-    ['', ''], ['', ''],
-    ['Saldo en caja ($)', 96000],
-    ['Cuotas pagadas por adelantado ($)', 15000],
-    ['Disponible para equipamiento ($)', 81000],
-    ['', ''], ['', ''],
-    ['Integrantes con deuda', 2],
-    ['Deuda total, incluido el mes actual ($)', 30000],
-  ]);
-  const meses = [];
-  for (let i = 0; i < 12; i++) meses.push({ value: art(`${2026 + Math.floor((9 + i) / 12)}-${String((9 + i) % 12 + 1).padStart(2, '0')}-01 00:00`), fmt: 'mmm yy' });
-  const est = n => Array.from({ length: 12 }, (_, i) => (i < n ? 'Pagado' : (i === 0 ? 'Debe' : '')));
-  w.addSheet('Cuotas', [
-    ['Integrante', 'Pagado', 'Meses', 'A cuenta', 'Debe', 'Adelantado', 'Pagado hasta'].concat(meses),
-    ['Juancho', 45000, 3, 0, 0, 30000, 'dic 26'].concat(est(3)),
-    ['Colo', 0, 0, 0, 15000, 0, '-'].concat(est(0)),
-    ['Totales', 45000, 3, 0, 15000, 30000, ''],
-  ]);
-  w.sheet('Config').getRange('B7').setValue('luciopepi');
-  w.sheet('Config').getRange('B28').setValue(art('2026-10-01 00:00'));
-  let d, e2;
-  try { d = w.run('datosApp_'); } catch (e) { e2 = e; }
-  check('datosApp_ does not throw', !e2, e2 && e2.stack);
-  if (d) {
-    const json = JSON.stringify(d);
-    check('cancha and caja read by label', d.cancha.costo === 120000 && d.cancha.faltan === 75000 && d.cancha.pagada === true && d.caja.fondo === 81000, JSON.stringify(d.cancha) + JSON.stringify(d.caja));
-    check('integrantes stop at Totales', d.integrantes.length === 2 && d.integrantes[1].apodo === 'Colo', JSON.stringify(d.integrantes.map(m => m.apodo)));
-    check('estados and debt per member', d.integrantes[0].estados[2] === 'Pagado' && d.integrantes[1].debe === 15000 && d.integrantes[1].hasta === '', JSON.stringify(d.integrantes[1]));
-    check('mes actual index found', d.mesIdx === 0 && d.meses.length === 12, d.mesIdx + ' ' + d.meses.length);
-    check('payments attached to members', d.integrantes[0].pagos.length > 0, JSON.stringify(d.integrantes[0].pagos));
-    check('no CUIT, operation numbers or names', !/20-?30111222|180000000\d+|182263652715|Juan Pérez|Club Social/.test(json), json.slice(0, 300));
-    check('movimientos mixes ingresos and gastos', d.movimientos.some(m => m.ingreso) && d.movimientos.some(m => !m.ingreso) && d.movimientos.length <= 40);
-    check('result cached', !!(w.cache && w.cache.datosApp));
-  }
-  sync(w, '2026-10-10 15:00');
-  check('sync clears the app cache', !(w.cache && w.cache.datosApp) && w.cacheRemoved > 0);
-}
-
-// ============================================================ panel del administrador
-function addAppSheets(w, apodos) {
-  w.addSheet('Resumen', [
-    ['Caja Hockey', ''], ['', ''],
-    ['Mes actual', { value: art('2026-10-01 00:00'), fmt: 'mmm yyyy' }],
-    ['', ''], ['', ''],
-    ['Integrantes con el mes pago', 3], ['Integrantes en total', 5],
-    ['Integrantes necesarios para cubrir la cancha', 8], ['Recaudado para la cancha ($)', 45000],
-    ['Costo de la cancha ($)', 120000], ['Faltan ($)', 75000], ['Cobertura', 0.375],
-    ['Vence el', { value: art('2026-10-10 00:00'), fmt: 'dd/mm/yyyy' }], ['Cancha del mes pagada', 'Sí'],
-    ['', ''], ['', ''], ['', ''], ['', ''], ['', ''], ['', ''],
-    ['Saldo en caja ($)', 96000], ['Cuotas pagadas por adelantado ($)', 15000], ['Disponible para equipamiento ($)', 81000],
-    ['', ''], ['', ''], ['Integrantes con deuda', 2], ['Deuda total, incluido el mes actual ($)', 30000],
-  ]);
-  const meses = [];
-  for (let i = 0; i < 12; i++) meses.push({ value: art(`${2026 + Math.floor((9 + i) / 12)}-${String((9 + i) % 12 + 1).padStart(2, '0')}-01 00:00`), fmt: 'mmm yy' });
-  const rows = [['Integrante', 'Pagado', 'Meses', 'A cuenta', 'Debe', 'Adelantado', 'Pagado hasta'].concat(meses)];
-  apodos.forEach(a => rows.push([a, 0, 0, 0, 15000, 0, '-'].concat(Array(12).fill(''))));
-  rows.push(['Totales', 0, '', '', 0, 0, '']);
-  rows.push(['', '', '', '', '', '', 'Pagaron', 0]);
-  const c = w.addSheet('Cuotas', rows);
-  // una fórmula por fila de integrante, para verificar que se copia a la fila nueva
-  apodos.forEach((a, i) => c.getRange(i + 2, 3).setValue('=INT(R[0]C[-1]/15000)'));
-  w.sheet('Config').getRange('B7').setValue('luciopepi');
-  w.sheet('Config').getRange('B28').setValue(art('2026-10-01 00:00'));
-}
-const APODOS = ['Juancho', 'Flaco', 'Tano', 'Colo', 'Dieguito'];
+// ============================================================ etapa 1: cálculo, app y panel
+function intentar(fn) { try { return { r: fn() }; } catch (e) { return { e }; } }
+const PIN = '482915';
 function uiPin(pin) {
   return {
     ButtonSet: { OK_CANCEL: 'OK_CANCEL' }, Button: { OK: 'OK' }, alerts: [],
@@ -566,153 +488,284 @@ function uiPin(pin) {
     alert(t) { this.alerts.push(t); },
   };
 }
-function intentar(fn) { try { return { r: fn() }; } catch (e) { return { e }; } }
-const PIN = '482915';
+function mundoAdmin(payments) {
+  const w = newWorld(payments || basePayments(), { ui: uiPin(PIN) });
+  w.setNow(nowIso('2026-10-10 20:00'));
+  w.run('definirPin');
+  return w;
+}
+
+section('C1 cálculo: precios por mes, media cuota, bajas, parciales y caja');
+{
+  const w = newWorld([]);
+  const D = s => w.mkDate(art(s + ' 00:00').getTime());
+  const base = {
+    inicio: D('2026-10-01'), saldoInicial: 1000, hoy: D('2026-10-20'),
+    valores: [{ desde: D('2026-10-01'), cuota: 15000, cancha: 200000 }, { desde: D('2026-11-01'), cuota: null, cancha: 250000 }],
+    miembros: [
+      { apodo: 'Debe', cuits: [], ids: [] },
+      { apodo: 'Adelanta', cuits: [], ids: [] },
+      { apodo: 'Nuevo', cuits: [], ids: [], alta: D('2026-10-20') },
+      { apodo: 'Baja', cuits: [], ids: [], ultimoMes: D('2026-10-01') },
+      { apodo: 'Admin', cuits: [], ids: [], auto: true },
+      { apodo: 'Parcial', cuits: [], ids: [] },
+    ],
+    pagos: [
+      { fecha: D('2026-10-05'), apodo: 'Adelanta', monto: 45000, imputacion: 'Cuota' },
+      { fecha: D('2026-10-21'), apodo: 'Nuevo', monto: 7500, imputacion: 'Cuota' },
+      { fecha: D('2026-10-06'), apodo: 'Parcial', monto: 10000, imputacion: 'Cuota' },
+      { fecha: D('2026-10-07'), apodo: 'Debe', monto: 8500, imputacion: 'No es de la caja' },
+      { fecha: D('2026-10-07'), apodo: 'Debe', monto: 3000, imputacion: 'Por clasificar' },
+      { fecha: D('2026-10-08'), apodo: 'Baja', monto: 2000, imputacion: 'Otro de la caja' },
+    ],
+    gastos: [{ fecha: D('2026-10-02'), tipo: 'Cancha', concepto: 'Cancha octubre', monto: 200000 }],
+  };
+  let x = intentar(() => w.ctx.calcularEstado_(base));
+  check('calcula sin error', !x.e, x.e && x.e.stack);
+  const e = x.r;
+  const de = a => e.integrantes.find(i => i.apodo === a);
+  check('sin pagos: debe octubre (1 cuota, $15.000)', de('Debe').estados[0].e === 'debe' && de('Debe').cuotasDebe === 1 && de('Debe').deuda === 15000);
+  check('$45.000: oct, nov y dic pagados, $30.000 adelantado', ['pagado', 'pagado', 'pagado', 'sinvencer'].every((s, i) => de('Adelanta').estados[i].e === s) && de('Adelanta').adelantado === 30000);
+  check('alta el 20/10: octubre media cuota, pagada con $7.500', de('Nuevo').estados[0].medio && de('Nuevo').estados[0].e === 'pagado' && de('Nuevo').deuda === 0, JSON.stringify(de('Nuevo').estados[0]));
+  check('baja en octubre: noviembre "no juega", la deuda de octubre sigue', de('Baja').estados[1].e === 'nojuega' && de('Baja').deuda === 15000);
+  check('administrador al día solo', de('Admin').estados[0].e === 'pagado' && de('Admin').estados[1].e === 'sinvencer');
+  check('pago parcial: debe y faltan $5.000', de('Parcial').estados[0].e === 'debe' && de('Parcial').estados[0].falta === 5000);
+  check('caja: suma cuotas, otros y administrador; no "No es de la caja" ni "Por clasificar"', e.caja.cobrado === 79500 && e.caja.saldo === 1000 + 79500 - 200000, JSON.stringify(e.caja));
+  check('cancha: recaudado, quiénes pagaron y cuotas necesarias', e.cancha.recaudado === 47500 && e.cancha.pagaron === 3 && e.cancha.total === 6 && e.cancha.necesarios === 14, JSON.stringify(e.cancha));
+  check('cuenta los pagos por clasificar', e.porClasificar === 1);
+  const sube = Object.assign({}, base, { hoy: D('2026-12-05'),
+    valores: base.valores.concat([{ desde: D('2026-12-01'), cuota: 18000, cancha: null }]) });
+  const e2 = w.ctx.calcularEstado_(sube);
+  const ad = e2.integrantes.find(i => i.apodo === 'Adelanta');
+  check('cuota sube en diciembre: el adelantado debe la diferencia ($3.000)', ad.estados[2].e === 'debe' && ad.estados[2].falta === 3000 && ad.deuda === 3000, JSON.stringify(ad.estados.slice(0, 3)));
+}
+
+section('W1 app pública: datos calculados, sin información personal');
+{
+  const w = newWorld(basePayments());
+  w.setNow(nowIso('2026-10-10 20:00'));
+  let x = intentar(() => w.run('datosApp_'));
+  check('datosApp_ no da error', !x.e, x.e && x.e.stack);
+  const d = x.r;
+  if (d) {
+    const json = JSON.stringify(d);
+    check('cancha del mes', d.cancha.costo === 120000 && d.cancha.recaudado === 75000 && d.cancha.pagaron === 5 && d.cancha.pagada, JSON.stringify(d.cancha));
+    check('caja', d.caja.saldo === 75000 && d.caja.adelantos === 120000, JSON.stringify(d.caja));
+    check('por integrante solo apodo, estados y cuotas que debe', d.integrantes.every(m => Object.keys(m).sort().join() === 'apodo,baja,cuotasDebe,estados,hasta'), JSON.stringify(d.integrantes[0]));
+    check('sin CUIT, números de operación ni montos por persona', !/20-?30111222|20301112224|180000000\d+|182263652715|"deuda"|"adelantado"|"pagos"/.test(json), json.slice(0, 400));
+    check('valores por mes', d.valores.length === 2 && d.valores[1].cuota === 15000 && d.valores[1].cancha === 150000, JSON.stringify(d.valores));
+    check('gastos y cobrado por mes', d.gastos.length === 1 && d.gastos[0].monto === 120000 && d.porMes.length >= 1, JSON.stringify(d.gastos));
+    check('queda en caché', !!(w.cache && w.cache.datosApp));
+  }
+  sync(w, '2026-10-10 21:00');
+  check('la sincronización borra la caché', !(w.cache && w.cache.datosApp) && w.cacheRemoved > 0);
+}
+
+section('R1 recalcular: Valores, Cuotas y Resumen');
+{
+  const w = newWorld(basePayments());
+  w.setNow(nowIso('2026-10-10 20:00'));
+  const x = intentar(() => w.run('recalcular_'));
+  check('recalcula sin error', !x.e, x.e && x.e.stack);
+  const v = w.sheet('Valores');
+  check('crea Valores con la cuota y la cancha de Config', v && v.getRange(2, 2).getValue() === 15000 && v.getRange(2, 3).getValue() === 120000 && v.getRange(3, 3).getValue() === 150000 && v.getRange(3, 2).getValue() === '');
+  const c = w.sheet('Cuotas').rows(1);
+  check('Cuotas: encabezado y estados', c[0][0] === 'Integrante' && c[0][5] === 'oct 26' && c[1][0] === 'Juancho' && c[1][5] === 'Pagado', JSON.stringify(c.slice(0, 2)));
+  const r = w.sheet('Resumen').rows(1);
+  const saldo = r.find(f => f[0] === 'Saldo en caja ($)');
+  check('Resumen: saldo en caja', saldo && saldo[1] === '75000', JSON.stringify(saldo));
+  check('Integrantes: columnas de alta y baja', w.sheet('Integrantes').getRange(1, 11).getValue() === 'Fecha de alta' && w.sheet('Integrantes').getRange(1, 12).getValue() === 'Último mes (baja)');
+  check('Pagos: lista de imputaciones nueva', !!w.sheet('Pagos').raw(2, 4).validation);
+}
 
 section('A1 PIN del administrador');
 {
-  const ui = uiPin(PIN);
-  const w = newWorld(basePayments(), { ui });
-  addAppSheets(w, APODOS);
+  const w = newWorld(basePayments(), { ui: uiPin(PIN) });
+  w.setNow(nowIso('2026-10-10 20:00'));
   let x = intentar(() => w.ctx.adminEntrar(PIN));
   check('sin PIN definido: pide definirlo', x.e && /Todavía no hay PIN/.test(x.e.message), x.e && x.e.message);
   w.run('definirPin');
-  check('PIN guardado como hash con sal', /^[0-9a-f-]{36}:[A-Za-z0-9+/=]{44}$/.test(w.scriptProps.ADMIN_PIN || '') && !String(w.scriptProps.ADMIN_PIN).includes(PIN), w.scriptProps.ADMIN_PIN);
+  check('PIN guardado como hash con sal', /^[0-9a-f-]{36}:[A-Za-z0-9+/=]{44}$/.test(w.scriptProps.ADMIN_PIN || '') && !String(w.scriptProps.ADMIN_PIN).includes(PIN));
   x = intentar(() => w.ctx.adminEntrar(PIN));
-  check('PIN correcto entra y devuelve integrantes', !x.e && x.r.integrantes.length === 5 && x.r.cuota === 15000, x.e && x.e.message);
+  check('PIN correcto entra', !x.e && x.r.integrantes.length === 5 && x.r.cuotaMes === 15000, x.e && x.e.stack);
+  check('el panel no manda CUIT ni IDs', x.r && !/20301112224|20-30111222/.test(JSON.stringify(x.r)));
   for (let i = 0; i < 5; i++) x = intentar(() => w.ctx.adminEntrar('000000'));
-  check('PIN incorrecto', x.e && /PIN incorrecto/.test(x.e.message), x.e && x.e.message);
+  check('PIN incorrecto', x.e && /PIN incorrecto/.test(x.e.message));
   x = intentar(() => w.ctx.adminEntrar(PIN));
-  check('después de 5 errores bloquea aunque el PIN sea correcto', x.e && /Demasiados intentos/.test(x.e.message), x.e && x.e.message);
-  x = intentar(() => w.ctx.adminCargarPago(PIN, { apodo: 'Colo', monto: 15000, fecha: '2026-10-10', imputacion: 'Cuota', medio: 'Efectivo' }));
-  check('el bloqueo también frena las escrituras', x.e && /Demasiados intentos/.test(x.e.message));
-  const ui2 = uiPin('12a');
-  const w2 = newWorld(basePayments(), { ui: ui2 });
-  w2.run('definirPin');
-  check('PIN con letras no se guarda', !w2.scriptProps.ADMIN_PIN && /6 a 12 números/.test(ui2.alerts.join(' ')));
+  check('después de 5 errores bloquea', x.e && /Demasiados intentos/.test(x.e.message));
+  x = intentar(() => w.ctx.adminCargarPago(PIN, { apodo: 'Colo', monto: 15000, fecha: '2026-10-10', tipo: 'Cuota' }));
+  check('el bloqueo frena las escrituras', x.e && /Demasiados intentos/.test(x.e.message));
 }
 
-section('A2 cargar pago en efectivo');
+section('A2 cargar efectivo');
 {
-  const w = newWorld(basePayments(), { ui: uiPin(PIN) });
-  addAppSheets(w, APODOS);
-  w.run('definirPin');
-  w.setNow(nowIso('2026-10-10 20:00'));
+  const w = mundoAdmin();
   const antes = rowsOf(w, 'Pagos').length;
-  let x = intentar(() => w.ctx.adminCargarPago(PIN, { apodo: 'Colo', monto: '15000', fecha: '2026-10-10', imputacion: 'Cuota', medio: 'Efectivo', nota: '=HYPERLINK("x")' }));
+  let x = intentar(() => w.ctx.adminCargarPago(PIN, { apodo: 'Colo', monto: '15000', fecha: '2026-10-10', tipo: 'Cuota', nota: '=HYPERLINK("x")' }));
   check('carga sin error', !x.e, x.e && x.e.stack);
-  const filas = rowsOf(w, 'Pagos');
-  const ult = filas[filas.length - 1] || [];
-  check('agrega una fila en Pagos', filas.length === antes + 1, filas.length);
-  check('fila con integrante, monto, imputación y medio', /^10\/10\/2026( 00:00:00)?$/.test(ult[0]) && ult[1] === 'Colo' && ult[2] === '15000' && ult[3] === 'Cuota' && ult[4] === 'Efectivo', JSON.stringify(ult));
-  check('nota marcada como cargada desde la app y sin fórmula', /^Cargado desde la app\. =HYPERLINK/.test(ult[9]) && w.formulas.filter(f => !/^Cuotas!/.test(f)).length === 0, ult[9] + ' | ' + w.formulas.join(','));
-  check('queda en azul (cargado a mano)', w.sheet('Pagos').raw(antes + 2, 2).color === '#0000FF');
-  check('devuelve mensaje y datos de la app', x.r && /Colo/.test(x.r.mensaje) && x.r.datos && x.r.datos.cancha && x.r.admin);
-  x = intentar(() => w.ctx.adminCargarPago(PIN, { apodo: 'Colo', monto: '15000', fecha: '2026-10-10', imputacion: 'Cuota', medio: 'Efectivo' }));
-  check('doble toque: no carga dos veces', x.e && /ya se cargó/.test(x.e.message) && rowsOf(w, 'Pagos').length === antes + 1);
+  const ult = rowsOf(w, 'Pagos').slice(-1)[0] || [];
+  check('fila: integrante, monto, Cuota, Efectivo', ult[1] === 'Colo' && ult[2] === '15000' && ult[3] === 'Cuota' && ult[4] === 'Efectivo', JSON.stringify(ult));
+  check('nota sin fórmula y en azul', /^Cargado desde la app\. =HYPERLINK/.test(ult[9]) && w.formulas.length === 0 && w.sheet('Pagos').raw(antes + 2, 2).color === '#0000FF');
+  check('devuelve datos públicos y del panel', x.r && x.r.datos && x.r.admin && /Colo/.test(x.r.mensaje));
+  const saldo = x.r.datos.caja.saldo;
+  x = intentar(() => w.ctx.adminCargarPago(PIN, { apodo: 'Tano', monto: '8500', fecha: '2026-10-10', tipo: 'No es de la caja' }));
+  check('"No es de la caja" no cambia el saldo', !x.e && x.r.datos.caja.saldo === saldo, x.e ? x.e.message : x.r.datos.caja.saldo + ' vs ' + saldo);
+  x = intentar(() => w.ctx.adminCargarPago(PIN, { apodo: 'Tano', monto: '8500', fecha: '2026-10-10', tipo: 'No es de la caja' }));
+  check('doble toque: no carga dos veces', x.e && /ya se cargó/.test(x.e.message));
   const malos = [
-    [{ apodo: 'Nadie', monto: 15000, fecha: '2026-10-10', imputacion: 'Cuota', medio: 'Efectivo' }, /integrante/],
-    [{ apodo: 'Tano', monto: 0, fecha: '2026-10-10', imputacion: 'Cuota', medio: 'Efectivo' }, /monto/],
-    [{ apodo: 'Tano', monto: 15000, fecha: '2026-10-12', imputacion: 'Cuota', medio: 'Efectivo' }, /fecha/],
-    [{ apodo: 'Tano', monto: 15000, fecha: '2026-02-31', imputacion: 'Cuota', medio: 'Efectivo' }, /fecha/],
-    [{ apodo: 'Tano', monto: 15000, fecha: '2026-10-09', imputacion: 'Revisar', medio: 'Efectivo' }, /imputación/],
-    [{ apodo: 'Tano', monto: 15000, fecha: '2026-10-09', imputacion: 'Cuota', medio: 'Cheque' }, /medio/],
+    [{ apodo: 'Nadie', monto: 15000, fecha: '2026-10-10', tipo: 'Cuota' }, /integrante/],
+    [{ apodo: 'Tano', monto: 0, fecha: '2026-10-10', tipo: 'Cuota' }, /monto/],
+    [{ apodo: 'Tano', monto: 15000, fecha: '2026-10-12', tipo: 'Cuota' }, /fecha/],
+    [{ apodo: 'Tano', monto: 15000, fecha: '2026-10-09', tipo: 'Revisar' }, /cuota, otra cosa/],
   ];
-  const fallan = malos.every(([d, re]) => { const y = intentar(() => w.ctx.adminCargarPago(PIN, d)); return y.e && re.test(y.e.message); });
-  check('valida integrante, monto, fecha, imputación y medio', fallan && rowsOf(w, 'Pagos').length === antes + 1);
-  x = intentar(() => w.ctx.adminCargarPago('999999', { apodo: 'Tano', monto: 15000, fecha: '2026-10-09', imputacion: 'Cuota', medio: 'Efectivo' }));
-  check('sin PIN correcto no escribe', x.e && /PIN incorrecto/.test(x.e.message) && rowsOf(w, 'Pagos').length === antes + 1);
+  check('valida integrante, monto, fecha y tipo', malos.every(([d, re]) => { const y = intentar(() => w.ctx.adminCargarPago(PIN, d)); return y.e && re.test(y.e.message); }));
 }
 
-section('A3 asignar transferencias de Por revisar');
+section('A3 asignar y descartar transferencias de Por revisar');
 {
   const RICARDO = 444000555;
-  const w = newWorld(basePayments().concat([
+  const w = mundoAdmin(basePayments().concat([
     pay({ id: 7101, created: '2026-10-10 10:00', payerId: RICARDO, cuit: '20111222333', amount: 15000, first: 'Ricardo', last: 'Pereyra' }),
     pay({ id: 7102, created: '2026-10-10 11:00', payerId: RICARDO, cuit: '20111222333', amount: 30000, first: 'Ricardo', last: 'Pereyra' }),
     pay({ id: 7103, created: '2026-10-10 12:00', payerId: ME, amount: 15000, ptype: 'bank_transfer', pmethod: 'cvu', bankName: 'Fulano Banco' }),
-  ]), { ui: uiPin(PIN) });
-  addAppSheets(w, APODOS);
-  w.run('definirPin');
+    pay({ id: 7104, created: '2026-10-10 12:30', payerId: 444000999, cuit: '20555666777', amount: 15000, first: 'Asado' }),
+  ]));
   let err = sync(w, '2026-10-10 15:00');
   check('sync sin error', !err, err && err.stack);
-  check('quedan 3 en Por revisar', revisar(w).length === 3, JSON.stringify(revisar(w)));
   let x = intentar(() => w.ctx.adminEntrar(PIN));
-  check('el panel lista las 3 sin CUIT ni ID', !x.e && x.r.porRevisar.length === 3 && !JSON.stringify(x.r).includes('20111222333') && !JSON.stringify(x.r).includes(String(RICARDO)), x.e ? x.e.message : JSON.stringify(x.r && x.r.porRevisar));
+  check('el panel lista las 4 sin CUIT ni ID', !x.e && x.r.porRevisar.length === 4 && !/20111222333|444000555/.test(JSON.stringify(x.r)));
+  check('marca la del banco', x.r.porRevisar.some(t => t.op === '7103' && t.banco));
   x = intentar(() => w.ctx.adminAsignar(PIN, '7101', 'Colo'));
   check('asigna sin error', !x.e, x.e && x.e.stack);
-  const p = rowsOf(w, 'Pagos');
-  const deColo = p.filter(r => r[1] === 'Colo' && (r[8] === '7101' || r[8] === '7102'));
-  check('pasa las 2 transferencias de esa cuenta a Pagos', deColo.length === 2, JSON.stringify(deColo));
-  check('la de $30.000 queda como Cuota (múltiplo)', deColo.some(r => r[8] === '7102' && r[3] === 'Cuota'));
-  check('se borran de Por revisar; queda la del banco', revisar(w).length === 1 && revisar(w)[0][7] === '7103', JSON.stringify(revisar(w)));
+  const deColo = rowsOf(w, 'Pagos').filter(r => r[1] === 'Colo' && ['7101', '7102'].includes(r[8]));
+  check('pasa las 2 de esa cuenta a Pagos como Cuota', deColo.length === 2 && deColo.every(r => r[3] === 'Cuota'), JSON.stringify(deColo));
   const colo = w.sheet('Integrantes').rows(2).find(r => r[1] === 'Colo');
-  check('guarda CUIT e ID de Mercado Pago en Integrantes', colo[5] === '20111222333' && colo[9] === String(RICARDO), JSON.stringify(colo));
-  check('mensaje avisa que los próximos se cargan solos', /se cargan solos/.test(x.r.mensaje), x.r && x.r.mensaje);
-  // la próxima transferencia de esa cuenta entra sola
-  w.payments.push(pay({ id: 7104, created: '2026-10-11 09:00', payerId: RICARDO, cuit: '20111222333', amount: 15000, first: 'Ricardo', last: 'Pereyra' }));
+  check('guarda CUIT e ID en Integrantes', colo[5] === '20111222333' && colo[9] === String(RICARDO), JSON.stringify(colo));
+  w.payments.push(pay({ id: 7105, created: '2026-10-11 09:00', payerId: RICARDO, cuit: '20111222333', amount: 15000 }));
   err = sync(w, '2026-10-11 10:00');
-  check('la siguiente transferencia de Ricardo se carga sola a Colo', !err && rowsOf(w, 'Pagos').some(r => r[8] === '7104' && r[1] === 'Colo'), err && err.stack);
-  // transferencia de banco: se asigna pero no aprende nada
+  check('la siguiente de esa cuenta entra sola', !err && rowsOf(w, 'Pagos').some(r => r[8] === '7105' && r[1] === 'Colo'));
   x = intentar(() => w.ctx.adminAsignar(PIN, '7103', 'Tano'));
-  check('banco: se asigna y avisa que las próximas también van a Por revisar', !x.e && rowsOf(w, 'Pagos').some(r => r[8] === '7103' && r[1] === 'Tano' && r[4] === 'Transferencia bancaria') && /bancos/.test(x.r.mensaje), x.e ? x.e.message : x.r.mensaje);
-  check('Por revisar queda vacío', revisar(w).length === 0);
+  check('banco: se asigna y avisa', !x.e && rowsOf(w, 'Pagos').some(r => r[8] === '7103' && r[1] === 'Tano' && r[4] === 'Transferencia bancaria') && /bancos/.test(x.r.mensaje), x.e ? x.e.message : x.r.mensaje);
+  x = intentar(() => w.ctx.adminDescartar(PIN, '7104'));
+  check('"no es de la caja": sale de Por revisar y no va a Pagos', !x.e && revisar(w).length === 0 && !rowsOf(w, 'Pagos').some(r => r[8] === '7104'), x.e && x.e.message);
+  err = sync(w, '2026-10-11 11:00');
+  check('la descartada no vuelve a aparecer', !err && revisar(w).length === 0);
   x = intentar(() => w.ctx.adminAsignar(PIN, '7103', 'Tano'));
   check('asignar una que ya no está da error claro', x.e && /ya no está/.test(x.e.message));
-  check('no se crearon fórmulas', w.formulas.filter(f => !/^Cuotas!/.test(f)).length === 0, w.formulas.join(' | '));
 }
 
-section('A4 un CUIT que ya es de otro integrante no se pisa');
+section('A4 varios CUIT por integrante; no se pisa el de otro');
 {
-  const w = newWorld(basePayments().concat([
-    pay({ id: 7201, created: '2026-10-10 10:00', payerId: 444000777, cuit: '27999888777', amount: 15000, first: 'Esposa', last: 'De Tano' }),
-  ]), { ui: uiPin(PIN) });
-  addAppSheets(w, APODOS);
-  w.run('definirPin');
-  w.sheet('Integrantes').getRange('F5').setValue('27999888777, 20999000111'); // Colo: dos cuentas
+  const w = mundoAdmin(basePayments().concat([
+    pay({ id: 7201, created: '2026-10-10 10:00', payerId: 444000777, cuit: '27999888777', amount: 15000 }),
+  ]));
+  w.sheet('Integrantes').getRange('F5').setValue('27999888777, 20999000111');
   let err = sync(w, '2026-10-10 15:00');
-  check('varios CUIT en una celda: reconoce el segundo', !err && rowsOf(w, 'Pagos').some(r => r[8] === '7201' && r[1] === 'Colo'), err ? err.stack : JSON.stringify(revisar(w)));
-  w.payments.push(pay({ id: 7202, created: '2026-10-10 16:00', payerId: 444000888, cuit: '20999000111', amount: 15000 }));
+  check('reconoce el segundo CUIT de la celda', !err && rowsOf(w, 'Pagos').some(r => r[8] === '7201' && r[1] === 'Colo'), err && err.stack);
   w.payments.push(pay({ id: 7203, created: '2026-10-10 16:30', payerId: 444000999, cuit: '27000111222', amount: 15000 }));
-  w.sheet('Integrantes').getRange('F5').setValue('27999888777');
-  err = sync(w, '2026-10-10 17:00');
-  w.sheet('Integrantes').getRange('F4').setValue('27000111222'); // Tano ya tiene ese CUIT
+  sync(w, '2026-10-10 17:00');
+  w.sheet('Integrantes').getRange('F4').setValue('27000111222');
   const x = intentar(() => w.ctx.adminAsignar(PIN, '7203', 'Juancho'));
   const juancho = w.sheet('Integrantes').rows(2).find(r => r[1] === 'Juancho');
-  check('asigna, pero no le copia a Juancho un CUIT que es de Tano', !x.e && rowsOf(w, 'Pagos').some(r => r[8] === '7203' && r[1] === 'Juancho') && !String(juancho[5]).includes('27000111222'), x.e ? x.e.message : JSON.stringify(juancho));
+  check('asigna, sin copiar a Juancho un CUIT de Tano', !x.e && !String(juancho[5]).includes('27000111222'), x.e ? x.e.message : JSON.stringify(juancho));
 }
 
-section('A5 agregar integrante');
+section('A5 alta de integrante (media cuota después del 15)');
 {
-  const w = newWorld(basePayments(), { ui: uiPin(PIN) });
-  addAppSheets(w, APODOS);
-  w.run('definirPin');
-  let x = intentar(() => w.ctx.adminAgregarIntegrante(PIN, { apodo: 'Nico', nombre: 'Nicolás', apellido: 'Paz', cuit: '20-33444555-6' }));
+  const w = mundoAdmin();
+  let x = intentar(() => w.ctx.adminAgregarIntegrante(PIN, { apodo: 'Nico', nombre: 'Nicolás', apellido: 'Paz', cuit: '20-33444555-6', alta: '2026-10-20' }));
   check('agrega sin error', !x.e, x.e && x.e.stack);
-  const ints = w.sheet('Integrantes').rows(2);
-  const nico = ints[ints.length - 1];
-  check('nueva fila al final de Integrantes', nico[1] === 'Nico' && nico[2] === 'Nicolás' && nico[5] === '20334445556' && nico[8] === 'No', JSON.stringify(nico));
-  const cuo = w.sheet('Cuotas');
-  check('Cuotas: fila nueva antes de Totales', cuo.display(8, 1) === 'Totales' && cuo.raw(7, 3).formula === '=INT(R[0]C[-1]/15000)', cuo.display(8, 1) + ' | ' + JSON.stringify(cuo.raw(7, 3)));
-  check('mensaje dice que se carga solo con CUIT', /se van a cargar solas/.test(x.r.mensaje));
+  const nico = w.sheet('Integrantes').rows(2).slice(-1)[0];
+  check('fila nueva con CUIT, No y fecha de alta', nico[1] === 'Nico' && nico[5] === '20334445556' && nico[8] === 'No' && /^20\/10\/2026/.test(nico[10]), JSON.stringify(nico));
+  check('mensaje: media cuota en octubre', /octubre 2026 paga media cuota/.test(x.r.mensaje), x.r && x.r.mensaje);
+  const n = x.r.datos.integrantes.find(m => m.apodo === 'Nico');
+  check('en la app: octubre media cuota, debe', n && n.estados[0].medio && n.estados[0].e === 'debe', JSON.stringify(n));
   const malos = [
-    [{ apodo: 'nico' }, /Ya hay/],
-    [{ apodo: 'Totales' }, /Ya hay/],
-    [{ apodo: '=1+1' }, /apodo/],
-    [{ apodo: 'Pepe', cuit: '123' }, /11 números/],
-    [{ apodo: 'Pepe', cuit: '20334445556' }, /Nico/],
+    [{ apodo: 'nico', alta: '2026-10-10' }, /Ya hay/],
+    [{ apodo: '=1+1', alta: '2026-10-10' }, /apodo/],
+    [{ apodo: 'Pepe', cuit: '123', alta: '2026-10-10' }, /11 números/],
+    [{ apodo: 'Pepe', cuit: '20334445556', alta: '2026-10-10' }, /Nico/],
+    [{ apodo: 'Pepe', alta: 'mañana' }, /fecha/],
   ];
-  check('valida apodo repetido, inválido y CUIT', malos.every(([d, re]) => { const y = intentar(() => w.ctx.adminAgregarIntegrante(PIN, d)); return y.e && re.test(y.e.message); }));
-  w.sheet('Integrantes').getRange('B9').setValue('Suelto');
-  x = intentar(() => w.ctx.adminAgregarIntegrante(PIN, { apodo: 'Otro' }));
-  check('si Cuotas e Integrantes no están alineadas, no toca nada', x.e && /alineadas/.test(x.e.message) && w.sheet('Cuotas').display(8, 1) === 'Totales');
+  check('valida apodo, CUIT y fecha', malos.every(([d, re]) => { const y = intentar(() => w.ctx.adminAgregarIntegrante(PIN, d)); return y.e && re.test(y.e.message); }));
 }
 
-section('A6 funciones del menú no se pueden usar desde la app');
+section('A6 baja y vuelta');
+{
+  const w = mundoAdmin();
+  let x = intentar(() => w.ctx.adminBaja(PIN, 'Colo', '2026-10'));
+  check('baja sin error', !x.e, x.e && x.e.stack);
+  const colo = x.r.datos.integrantes.find(m => m.apodo === 'Colo');
+  check('desde noviembre "no juega"', colo && colo.estados[1].e === 'nojuega' && colo.baja, JSON.stringify(colo && colo.estados.slice(0, 2)));
+  x = intentar(() => w.ctx.adminBaja(PIN, 'Colo', ''));
+  const colo2 = x.r && x.r.datos.integrantes.find(m => m.apodo === 'Colo');
+  check('deshacer la baja', !x.e && colo2 && !colo2.baja && colo2.estados[1].e !== 'nojuega');
+}
+
+section('A7 clasificar pagos que no son múltiplo de la cuota');
+{
+  const w = mundoAdmin(basePayments().concat([
+    pay({ id: 7301, created: '2026-10-10 10:00', payerId: 444000001, cuit: '20301112223', amount: 21000 }),
+  ]));
+  sync(w, '2026-10-10 15:00');
+  let x = intentar(() => w.ctx.adminEntrar(PIN));
+  const p = x.r && x.r.porClasificar[0];
+  check('aparece en "Por clasificar"', p && p.apodo === 'Juancho' && p.monto === 21000, JSON.stringify(x.r && x.r.porClasificar));
+  const saldo = w.run('datosApp_').caja.saldo;
+  x = intentar(() => w.ctx.adminClasificar(PIN, p.fila, 'Cuota', { apodo: 'Juancho', monto: 999 }));
+  check('si la fila cambió, no toca nada', x.e && /cambió/.test(x.e.message));
+  x = intentar(() => w.ctx.adminClasificar(PIN, p.fila, 'Cuota', { apodo: 'Juancho', monto: 21000 }));
+  check('clasifica como Cuota y suma a la caja', !x.e && rowsOf(w, 'Pagos').some(r => r[8] === '7301' && r[3] === 'Cuota') && x.r.datos.caja.saldo === saldo + 21000, x.e ? x.e.message : x.r.datos.caja.saldo + ' vs ' + saldo);
+  x = intentar(() => w.ctx.adminClasificar(PIN, p.fila, 'Por clasificar', { apodo: 'Juancho', monto: 21000 }));
+  check('no acepta opciones inválidas', x.e && /válida/.test(x.e.message));
+}
+
+section('A8 valores con "vigente desde"');
+{
+  const w = mundoAdmin();
+  let x = intentar(() => w.ctx.adminSimularValor(PIN, { tipo: 'cuota', monto: '18000', desde: '2026-12' }));
+  check('simula sin error', !x.e, x.e && x.e.stack);
+  check('avisa a quienes tienen diciembre pagado (Juancho, Flaco, Tano)', x.r && ['Juancho', 'Flaco', 'Tano'].every(a => x.r.afectados.some(y => y.apodo === a && y.diferencia === 3000)) && !x.r.afectados.some(y => y.apodo === 'Colo'), JSON.stringify(x.r && x.r.afectados));
+  check('cuotas necesarias desde diciembre', x.r && x.r.necesarios === Math.ceil(150000 / 18000));
+  x = intentar(() => w.ctx.adminNuevoValor(PIN, { tipo: 'cuota', monto: '18000', desde: '2026-12' }));
+  check('guarda en Valores', !x.e && w.sheet('Valores').rows(2).length === 3 && w.sheet('Valores').getRange(4, 2).getValue() === 18000, x.e ? x.e.stack : JSON.stringify(w.sheet('Valores').rows(2)));
+  x = intentar(() => w.ctx.adminNuevoValor(PIN, { tipo: 'cancha', monto: '160000', desde: '2026-12' }));
+  check('el mismo mes se completa en la misma fila', !x.e && w.sheet('Valores').rows(2).length === 3 && w.sheet('Valores').getRange(4, 3).getValue() === 160000);
+  x = intentar(() => w.ctx.adminNuevoValor(PIN, { tipo: 'cuota', monto: '18000', desde: '2025-01' }));
+  check('no acepta meses antes del inicio', x.e && /inicio/.test(x.e.message));
+}
+
+section('A9 gastos con comprobante');
+{
+  const nums = intentar(() => newWorld([]).ctx.numerosOperacion_('Comprobante\nNúmero de operación: 1832 7839 1082\nCUIT 20301112224\nCVU 0000003100044256946246'));
+  check('lee el N° de operación y salta el CUIT', nums.r && nums.r[0] === '183278391082' && !nums.r.includes('20301112224'), JSON.stringify(nums.r));
+  const w = mundoAdmin(basePayments().concat([
+    pay({ id: 555100001, created: '2026-10-09 10:00', payerId: ME, collector: 999000111, amount: 48000, desc: 'Bochas' }),
+    pay({ id: 555100002, created: '2026-10-09 11:00', payerId: 444000001, cuit: '20301112223', amount: 15000 }),
+  ]));
+  let x = intentar(() => w.ctx.adminBuscarOperacion(PIN, '555100001'));
+  check('busca una operación tuya', !x.e && x.r.pago.monto === 48000 && /09\/10\/2026/.test(x.r.pago.fecha), x.e && x.e.stack);
+  x = intentar(() => w.ctx.adminBuscarOperacion(PIN, '555100002'));
+  check('un cobro no es un gasto', x.e && /cobro/.test(x.e.message));
+  w.ocrTexto = 'Mercado Pago\nTransferencia enviada\nNúmero de operación 555100001';
+  x = intentar(() => w.ctx.adminLeerComprobante(PIN, { datos: Buffer.from('imagen').toString('base64'), tipo: 'image/jpeg' }));
+  check('lee el comprobante y encuentra la operación', !x.e && x.r.op === '555100001' && x.r.pago.monto === 48000 && x.r.archivoId, x.e && x.e.stack);
+  const D = w.drive || { calls: [], files: {} };
+  check('guarda la imagen en la carpeta y borra el documento de OCR', D.calls.some(c => /post .*drive\/v3\/files$/.test(c)) && Object.values(D.files).some(f => f.parents) && !Object.values(D.files).some(f => f.ocr), JSON.stringify(D));
+  x = intentar(() => w.ctx.adminLeerComprobante(PIN, { datos: 'x', tipo: 'application/pdf' }));
+  check('solo imágenes', x.e && /imagen/.test(x.e.message));
+  x = intentar(() => w.ctx.adminGuardarGasto(PIN, { op: '555100001', tipo: 'Equipamiento', concepto: 'Bochas nuevas', archivoId: 'arch2abcdefghij' }));
+  check('guarda el gasto con monto de Mercado Pago', !x.e && rowsOf(w, 'Gastos').some(r => r[6] === '555100001' && r[3] === '48000' && r[1] === 'Equipamiento' && /drive\.google\.com/.test(r[7])), x.e ? x.e.stack : JSON.stringify(rowsOf(w, 'Gastos')));
+  check('aparece en la app', x.r && x.r.datos.gastos.some(g => g.concepto === 'Bochas nuevas' && g.monto === 48000));
+  x = intentar(() => w.ctx.adminGuardarGasto(PIN, { op: '555100001', tipo: 'Equipamiento', concepto: 'Otra vez' }));
+  check('no se carga dos veces', x.e && /ya está cargada/.test(x.e.message));
+}
+
+section('A10 funciones del menú no se pueden usar desde la app');
 {
   const w = newWorld(basePayments());
   w.triggers.push({ h: 'sincronizar' });
-  const intentos = ['desactivarSincronizacion', 'activarSincronizacion', 'sincronizarAhora', 'probarConexion', 'definirPin', 'guardarClave']
+  const intentos = ['desactivarSincronizacion', 'activarSincronizacion', 'sincronizarAhora', 'probarConexion', 'definirPin', 'guardarClave', 'recalcularAhora']
     .map(f => intentar(() => w.ctx[f]()));
   check('sin la planilla abierta, todas cortan', intentos.every(x => x.e && /getUi/.test(x.e.message)), intentos.map(x => x.e && x.e.message).join(' | '));
   check('el disparador sigue activo', w.triggers.length === 1);

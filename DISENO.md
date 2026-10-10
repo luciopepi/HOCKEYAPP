@@ -2,7 +2,7 @@
 
 Decisiones tomadas con Lucio (administrador) antes de programar. Cada cambio de diseño se anota acá primero.
 
-Estado: **en definición**. No se programa nada nuevo hasta cerrar el diseño.
+Estado: **etapa 1 programada**, pendiente de prueba con datos reales. Las etapas 2 y 3 se diseñan antes de programarlas.
 
 ## Decisiones
 
@@ -48,8 +48,7 @@ Estado: **en definición**. No se programa nada nuevo hasta cerrar el diseño.
 - Si la API de Mercado Pago informa el saldo de una reserva o los rendimientos (reporte de dinero liberado: aparece "Rendimientos positivos", sin confirmar si separa la reserva).
 - Si las transferencias desde bancos traen algún dato de quien envía (CBU o nombre). De eso depende que las cuentas asociadas sirvan para reconocerlas.
 
-## Ya construido (se revisa contra este diseño antes de seguir)
+## Construido
 
-- Sincronización con Mercado Pago (`apps-script/Codigo.gs`).
-- App de solo lectura (`apps-script/Web.gs`, `App.html`).
-- Panel del administrador con PIN (commit 58d74e1): carga de efectivo, asignar transferencias, agregar integrante. Pendiente de ajustar al diseño.
+- **Etapa 1** (rama `claude/affectionate-goldberg-zlvock`): sincronización con Mercado Pago (`Codigo.gs`), cálculo de cuotas y caja (`Calculo.gs`), app pública y panel del administrador (`Web.gs`, `App.html`). Pantallas aprobadas en el lienzo de diseño (fila "Etapa 1").
+- Pendiente: etapas 2 y 3.
