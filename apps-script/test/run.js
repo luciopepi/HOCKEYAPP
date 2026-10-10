@@ -578,6 +578,50 @@ section('R1 recalcular: Valores, Cuotas y Resumen');
   check('Pagos: lista de imputaciones nueva', !!w.sheet('Pagos').raw(2, 4).validation);
 }
 
+section('R2 datos reales de la planilla (10/10/2026): mismos totales que las fórmulas viejas');
+{
+  const w = createWorld({ codePath: CODE, me: ME, payments: [], mp: {} });
+  const F = s => ({ value: art(s.split('/').reverse().join('-') + ' 00:00'), fmt: 'dd/mm/yyyy' });
+  const M = s => ({ value: art(s + '-01 00:00'), fmt: 'mmm yyyy' });
+  const nombres = [['Gustavo', '20296214745'], ['Franco', '20421880892'], ['Pela', '23270425429'], ['Renzo', '20346572834'], ['Lucio', ''],
+    ['Cristian', '20399566208'], ['Alfredo', ''], ['Robert', '20297403983'], ['Mono', '20270431926'], ['Diego', '23343291949'],
+    ['Emiliano', '20412532458'], ['Lokillo', '20229418700'], ['Richard', ''], ['Ariel', '20296212882'], ['Sebas P', ''], ['Johaquin', ''],
+    ['Joaquin', ''], ['Cascini', ''], ['Pablo', '20411574130']];
+  w.addSheet('Integrantes', [['N°', 'Apodo', 'Nombre', 'Apellido', 'Nombre MP', 'CUIT/CUIL', 'CVU/CBU', 'Notas', 'Cuota automática', 'ID Mercado Pago']]
+    .concat(nombres.map(([a, c], i) => [String(i + 1), a, a, '', '', c, '', '', a === 'Lucio' ? 'Sí' : 'No', ''])), 10);
+  const pagos = [['02/10/2026', 'Robert', 45000, 'Cuota'], ['06/10/2026', 'Lokillo', 30000, 'Cuota'], ['07/10/2026', 'Emiliano', 15000, 'Cuota'],
+    ['09/10/2026', 'Pela', 15000, 'Cuota'], ['09/10/2026', 'Mono', 15000, 'Cuota'], ['09/10/2026', 'Gustavo', 15000, 'Cuota'],
+    ['09/10/2026', 'Renzo', 15000, 'Cuota'], ['09/10/2026', 'Pablo', 15000, 'Cuota'], ['09/10/2026', 'Ariel', 15000, 'Cuota'],
+    ['09/10/2026', 'Diego', 15000, 'Cuota'], ['09/10/2026', 'Pela', 6000, 'Deuda anterior'], ['01/10/2026', 'Franco', 15000, 'Cuota'],
+    ['01/10/2026', 'Cristian', 15000, 'Cuota']];
+  w.addSheet('Pagos', [['Fecha', 'Integrante', 'Monto', 'Imputación', 'Medio', 'Nombre', 'CUIT', 'CVU', 'Op', 'Notas']]
+    .concat(pagos.map(([f, a, m, i], k) => [F(f), a, m, i, 'Transferencia Mercado Pago', '', '', '', String(180000000000 + k), ''])), 11);
+  w.addSheet('Gastos', [['Fecha', 'Tipo', 'Concepto', 'Monto', 'Sale de', 'Destinatario', 'Op', 'Notas'],
+    [F('09/10/2026'), 'Cancha', 'Cancha octubre', 200000, 'Cuotas del mes', 'Club Social y Deportivo Aberastain', '182263652715', '']], 10);
+  const cfg = [];
+  for (let r = 1; r <= 36; r++) cfg.push(['', '']);
+  cfg[3] = ['Cuota mensual ($)', 15000]; cfg[4] = ['Inicio del control (mes)', M('2026-10')]; cfg[5] = ['Saldo inicial', 21000];
+  cfg[6] = ['Alias', 'luciopepi']; cfg[9] = ['Día de vencimiento', 10];
+  cfg[15] = [M('2026-10'), 200000]; cfg[16] = [M('2026-11'), 250000];
+  cfg[32] = ['Importar pagos desde', F('10/10/2026')];
+  w.addSheet('Config', cfg, 5);
+  w.addSheet('Cuotas', [['Integrante']], 20);
+  w.addSheet('Resumen', [['Caja']]);
+  w.setNow(nowIso('2026-10-10 20:00'));
+  const x = intentar(() => w.run('datosApp_'));
+  check('calcula con los datos reales', !x.e, x.e && x.e.stack);
+  const d = x.r;
+  if (d) {
+    check('cancha: $195.000 de $200.000, 13 de 19, faltan $5.000', d.cancha.recaudado === 195000 && d.cancha.costo === 200000 && d.cancha.pagaron === 13 && d.cancha.total === 19 && d.cancha.faltan === 5000, JSON.stringify(d.cancha));
+    check('caja: saldo $67.000, adelantos $45.000, fondo $22.000', d.caja.saldo === 67000 && d.caja.adelantos === 45000 && d.caja.fondo === 22000 && d.caja.cobrado === 246000, JSON.stringify(d.caja));
+    const deben = d.integrantes.filter(m => m.cuotasDebe > 0).map(m => m.apodo).join(',');
+    check('deben: Alfredo, Richard, Sebas P, Johaquin, Joaquin y Cascini', deben === 'Alfredo,Richard,Sebas P,Johaquin,Joaquin,Cascini', deben);
+    const rob = d.integrantes.find(m => m.apodo === 'Robert');
+    check('Robert pagado hasta diciembre', rob.hasta === 'diciembre 2026', rob.hasta);
+    check('valores: oct $15.000/$200.000, nov $250.000', d.valores[0].cuota === 15000 && d.valores[0].cancha === 200000 && d.valores[1].cancha === 250000, JSON.stringify(d.valores));
+  }
+}
+
 section('A1 PIN del administrador');
 {
   const w = newWorld(basePayments(), { ui: uiPin(PIN) });
