@@ -121,6 +121,9 @@ function hojaValores_(ss) {
     if (filas.length) h.getRange(2, 1, filas.length, 3).setValues(filas);
     config.getRange(CELDA.CUOTA).setNote('Ya no se usa: la cuota está en la hoja Valores.');
     config.getRange(CELDA.COSTOS_CANCHA.split(':')[0]).setNote('Ya no se usa: los valores están en la hoja Valores.');
+    // Ayudas viejas que calculaban con la tabla de arriba: ya no se usan y podrían contradecir a Valores.
+    config.getRange('A26').clearContent();
+    config.getRange('A28:B30').clearContent();
   }
   return h;
 }

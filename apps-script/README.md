@@ -13,19 +13,28 @@ Script de Google Apps Script para la planilla **Caja Hockey**. Corre gratis en l
 ## Instalar o actualizar (desde la computadora)
 
 1. Abrí la planilla → **Extensiones → Apps Script**.
-2. Reemplazá el contenido de `Código.gs`, `Web.gs` y `App.html` por el de esta carpeta.
-3. Agregá el archivo nuevo: **+ → Secuencia de comandos** → nombre `Calculo` → pegá [`Calculo.gs`](Calculo.gs).
-4. **Configuración del proyecto** → tildá "Mostrar el archivo de manifiesto" → reemplazá `appsscript.json` (suma el permiso de Drive para guardar comprobantes).
-5. Guardá todo (Ctrl+S).
-6. Recargá la planilla → **Caja Hockey → Recalcular cuotas y resumen**.
-   - Google pide autorizar de nuevo por el permiso nuevo. Elegí tu cuenta → Configuración avanzada → Ir a Caja Hockey → **Seleccionar todo** → Continuar. Después volvé a elegir el menú.
+2. Pegá los archivos de esta carpeta. Si alguno no existe, crealo con el **+** junto a "Archivos":
+
+   | En Apps Script | Cómo crearlo | Contenido |
+   |---|---|---|
+   | `Código.gs` | ya existe | [`Codigo.gs`](Codigo.gs) |
+   | `Calculo.gs` | + → Secuencia de comandos → `Calculo` | [`Calculo.gs`](Calculo.gs) |
+   | `Web.gs` | + → Secuencia de comandos → `Web` | [`Web.gs`](Web.gs) |
+   | `App.html` | + → HTML → `App` (sin .html) | [`App.html`](App.html) |
+
+3. **Configuración del proyecto** (engranaje) → tildá "Mostrar el archivo de manifiesto" → volvé al editor y reemplazá `appsscript.json` por [`appsscript.json`](appsscript.json) (suma el permiso de Drive para guardar comprobantes).
+4. Guardá todo (Ctrl+S).
+5. Recargá la planilla → **Caja Hockey → Recalcular cuotas y resumen**.
+   - Google pide autorizar por el permiso nuevo: elegí tu cuenta → Configuración avanzada → Ir a Caja Hockey → **Seleccionar todo** → Continuar. Después volvé a elegir el menú.
    - La primera vez crea la hoja **Valores**, agrega las columnas de alta y baja en Integrantes y reescribe Cuotas y Resumen.
-7. Si todavía no lo hiciste:
+6. **Enseguida, publicá la versión nueva de la app** (si no, la app vieja lee mal las hojas nuevas):
+   - **Si ya estaba publicada:** Implementar → Administrar implementaciones → lápiz → Versión: **Nueva versión** → Implementar. El link no cambia.
+   - **Si es la primera vez:** Implementar → Nueva implementación → engranaje → **Aplicación web** → Ejecutar como: **Yo** → Quién tiene acceso: **Cualquier persona** → Implementar → copiá el link que termina en `/exec`.
+7. **Caja Hockey → Definir PIN del panel de administrador** (6 a 12 números).
+8. Mercado Pago (si todavía no lo hiciste):
    - **Caja Hockey → Guardar clave de Mercado Pago**: pegá el Access Token de producción (empieza con `APP_USR-`). Lo pegás vos; no lo compartas.
    - **Caja Hockey → Probar conexión con Mercado Pago**. Si las transferencias del 09/10 dicen "(ya está en Pagos)", poné 09/10/2026 en Config B33.
    - **Caja Hockey → Activar sincronización cada 30 minutos**.
-8. **Caja Hockey → Definir PIN del panel de administrador** (6 a 12 números).
-9. Apps Script → **Implementar → Administrar implementaciones → lápiz → Versión: Nueva versión → Implementar**. El link de la app no cambia.
 
 ## La app
 
