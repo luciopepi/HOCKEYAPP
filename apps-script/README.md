@@ -100,7 +100,7 @@ Cómo se calcula (DISENO.md, decisiones 10 a 12, 22 y 25):
 
 ## Pruebas
 
-`test/` simula Google Sheets, Drive y la API de Mercado Pago (182 casos):
+`test/` simula Google Sheets, Drive y la API de Mercado Pago (188 casos):
 
 ```
 TZ=America/Argentina/San_Juan node apps-script/test/run.js

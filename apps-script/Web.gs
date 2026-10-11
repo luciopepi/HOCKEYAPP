@@ -131,6 +131,8 @@ function porRevisar_(ss) {
 //
 // Las funciones admin* se pueden llamar desde cualquier navegador que abra la
 // app, así que todas verifican el PIN antes de leer o escribir nada.
+// Las constantes de acá no usan las de otros archivos: Apps Script carga los
+// archivos en el orden de la lista y Calculo.gs puede quedar después de Web.gs.
 
 const PIN_PROP = 'ADMIN_PIN';
 const FALLOS_PROP = 'ADMIN_FALLOS';
@@ -138,8 +140,6 @@ const TOKENS_PROP = 'ADMIN_CELULARES';
 const MAX_CELULARES = 5;
 const PIN_MAX_FALLOS = 5;
 const PIN_BLOQUEO_SEG = 900; // 15 minutos sin poder probar después de 5 PIN incorrectos
-const TIPOS_EFECTIVO = [IMP.CUOTA, IMP.OTRO_CAJA, IMP.NO_CAJA];
-const RECLASIFICABLES = [IMP.CUOTA, IMP.DEUDA_ANTERIOR, IMP.OTRO_CAJA, IMP.NO_CAJA];
 const TIPOS_GASTO = ['Equipamiento', 'Cancha', 'Otro'];
 const NOTA_APP = 'Cargado desde la app';
 const NOTA_ASIGNADA = 'Transferencia de Mercado Pago asignada desde la app';
@@ -333,7 +333,7 @@ function adminCargarPago(pin, d) {
     const m = miembroPorApodo_(leerMiembros_(hoja_(ss, HOJA.INTEGRANTES)), d.apodo);
     const monto = montoValido_(d.monto);
     const fecha = fechaApp_(d.fecha);
-    if (TIPOS_EFECTIVO.indexOf(d.tipo) === -1) throw new Error('Elegí si es cuota, otra cosa de la caja o no es de la caja.');
+    if ([IMP.CUOTA, IMP.OTRO_CAJA, IMP.NO_CAJA].indexOf(d.tipo) === -1) throw new Error('Elegí si es cuota, otra cosa de la caja o no es de la caja.');
     const nota = textoLibre_(d.nota, 200);
 
     // Evita cargarlo dos veces si se toca el botón de nuevo.
@@ -352,7 +352,7 @@ function adminCargarPago(pin, d) {
 function adminClasificar(pin, fila, imputacion, esperado) {
   verificarPin_(pin);
   return conLock_(() => {
-    if (RECLASIFICABLES.indexOf(imputacion) === -1) throw new Error('Elegí una opción válida.');
+    if ([IMP.CUOTA, IMP.DEUDA_ANTERIOR, IMP.OTRO_CAJA, IMP.NO_CAJA].indexOf(imputacion) === -1) throw new Error('Elegí una opción válida.');
     const ss = SpreadsheetApp.getActive();
     const h = hoja_(ss, HOJA.PAGOS);
     const f = Number(fila);

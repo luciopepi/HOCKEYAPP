@@ -104,7 +104,7 @@ function seed(world, o = {}) {
 }
 
 function newWorld(payments, o = {}) {
-  const w = createWorld({ codePath: CODE, me: ME, payments: payments, mp: o.mp || {}, ui: o.ui });
+  const w = createWorld({ codePath: CODE, me: ME, payments: payments, mp: o.mp || {}, ui: o.ui, orden: o.orden });
   seed(w, o);
   return w;
 }
@@ -907,6 +907,28 @@ section('A10 funciones del menú no se pueden usar desde la app');
     .map(f => intentar(() => w.ctx[f]()));
   check('sin la planilla abierta, todas cortan', intentos.every(x => x.e && /getUi/.test(x.e.message)), intentos.map(x => x.e && x.e.message).join(' | '));
   check('el disparador sigue activo', w.triggers.length === 1);
+}
+
+section('A11 cualquier orden de archivos en el editor');
+{
+  const archivos = ['Codigo.gs', 'Calculo.gs', 'Web.gs'];
+  const ordenes = [];
+  archivos.forEach(a => archivos.forEach(b => archivos.forEach(c => {
+    if (a !== b && b !== c && a !== c) ordenes.push([a, b, c]);
+  })));
+  ordenes.forEach(orden => {
+    const ui = uiPin(PIN), menu = [];
+    ui.createMenu = () => { const m = { addItem: (t) => { menu.push(t); return m; }, addSeparator: () => m, addToUi: () => {} }; return m; };
+    const r = intentar(() => {
+      const w = newWorld(basePayments(), { orden, ui });
+      w.setNow(nowIso('2026-10-10 20:00'));
+      w.run('onOpen');
+      w.run('recalcularAhora');
+      return w.ctx.datosApp_();
+    });
+    check('menú, recalcular y app con ' + orden.join(', '),
+      !r.e && menu.length === 7 && /Listo/.test(ui.alerts[0]) && r.r.cancha.costo === 120000, r.e ? r.e.message : menu.length + ' ' + ui.alerts[0] + ' ' + JSON.stringify(r.r.cancha));
+  });
 }
 
 // ------------------------------------------------------------ summary

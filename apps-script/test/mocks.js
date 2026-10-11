@@ -439,11 +439,10 @@ function createWorld(opts) {
     })();`, ctx);
   world.mkDate = ms => ctx.__mkDate(ms);
   world.setNow = iso => ctx.__setNow(Date.parse(iso));
-  const src = fs.readFileSync(opts.codePath, 'utf8');
-  vm.runInContext(src, ctx, { filename: 'Codigo.gs' });
-  ['Calculo.gs', 'Web.gs'].forEach(f => {
-    const extra = path.join(path.dirname(opts.codePath), f);
-    if (fs.existsSync(extra)) vm.runInContext(fs.readFileSync(extra, 'utf8'), ctx, { filename: f });
+  // Apps Script carga los archivos en el orden de la lista del editor.
+  (opts.orden || ['Codigo.gs', 'Calculo.gs', 'Web.gs']).forEach(f => {
+    const archivo = f === 'Codigo.gs' ? opts.codePath : path.join(path.dirname(opts.codePath), f);
+    if (fs.existsSync(archivo)) vm.runInContext(fs.readFileSync(archivo, 'utf8'), ctx, { filename: f });
   });
   world.ctx = ctx;
   world.run = (fn) => vm.runInContext(fn + '()', ctx);
