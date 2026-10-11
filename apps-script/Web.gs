@@ -354,6 +354,7 @@ function pagoAdmin_(p, vinculado) {
 
 function gastoAdmin_(g, vinculado) {
   return { fila: g.fila, fecha: fechaLarga_(g.fecha), iso: isoDia_(g.fecha), tipo: g.tipo, concepto: g.concepto,
+    mes: claveMes_(g.mes || primerDia_(soloDia_(g.fecha))),
     monto: g.monto, destinatario: g.destinatario, anulado: g.anulado, bloqueado: gastoBloqueado_(g.op, g.notas, vinculado),
     notas: g.notas.slice(0, 500) };
 }
@@ -595,6 +596,43 @@ function adminEditarPago(pin, fila, esperado, d) {
     if (antes.imp === IMP.ANULADO) h.getRange(f, 1, 1, COL_PAGOS.TOTAL).setFontLine('none');
     return respuestaAdmin_(antes.imp === IMP.ANULADO ? 'Listo: pago restaurado como "' + d.imputacion + '".'
       : 'Listo: pago de ' + m.apodo + ' guardado.');
+  });
+}
+
+/**
+ * Reparte un pago entre integrantes (decisión 40): la fila queda con la primera parte y se
+ * agregan filas para las demás, con la misma fecha, medio y N° de operación. La suma no cambia.
+ * partes = [{apodo, monto, imputacion}]
+ */
+function adminRepartirPago(pin, fila, esperado, partes) {
+  verificarPin_(pin);
+  return conLock_(() => {
+    const ss = SpreadsheetApp.getActive();
+    const h = hoja_(ss, HOJA.PAGOS);
+    const { f, v } = filaPago_(h, fila, esperado);
+    if (imputacion_(v[3]) === IMP.ANULADO) throw new Error('Ese pago está anulado.');
+    if (!Array.isArray(partes) || partes.length < 2 || partes.length > 5) throw new Error('Repartilo en 2 a 5 partes.');
+    const miembros = leerMiembros_(hoja_(ss, HOJA.INTEGRANTES));
+    const validas = [IMP.CUOTA, IMP.DEUDA_ANTERIOR, IMP.OTRO_CAJA, IMP.NO_CAJA];
+    const lista = partes.map(p => {
+      p = p || {};
+      if (validas.indexOf(p.imputacion) === -1) throw new Error('Elegí a qué corresponde cada parte.');
+      return { apodo: miembroPorApodo_(miembros, p.apodo).apodo, monto: montoValido_(p.monto), imputacion: p.imputacion };
+    });
+    const total = Number(v[2]);
+    if (Math.round(lista.reduce((s, p) => s + p.monto, 0) * 100) !== Math.round(total * 100)) {
+      throw new Error('Las partes tienen que sumar ' + pesos_(total) + '.');
+    }
+    const op = normalizarOp_(v[COL_PAGOS.OPERACION - 1]);
+    const detalle = lista.map(p => pesos_(p.monto) + ' ' + p.apodo).join(', ');
+    const notaParte = texto_('Parte de un pago de ' + pesos_(total) + (op ? ' (op. ' + op + ')' : '') + ' repartido desde la app el ' +
+      Utilities.formatDate(new Date(), ZONA, 'dd/MM/yyyy') + ': ' + detalle);
+    h.getRange(f, 2, 1, 3).setValues([[lista[0].apodo, lista[0].monto, lista[0].imputacion]]);
+    h.getRange(f, COL_PAGOS.TOTAL).setValue(notaCambio_(v[COL_PAGOS.TOTAL - 1], 'Repartido: ' + detalle));
+    agregarFilas_(h, lista.slice(1).map(p => [v[0], p.apodo, p.monto, p.imputacion, v[4], texto_(v[5]), v[6], v[7], op, notaParte]),
+      COL_PAGOS.TOTAL, [6, 7, 8, 9], COLOR_MANUAL);
+    h.getRange(h.getLastRow() - lista.length + 2, 1, lista.length - 1, 1).setNumberFormat('dd/mm/yyyy');
+    return respuestaAdmin_('Listo: pago repartido (' + detalle + ').');
   });
 }
 
@@ -1090,8 +1128,10 @@ function adminGuardarGasto(pin, d) {
     const r = resumenGasto_(pago, String(miUsuario_().id));
     const destinatario = textoLibre_(d.destinatario, 80) || r.destinatario;
     const archivo = /^[\w-]{10,}$/.test(String(d.archivoId || '')) ? 'https://drive.google.com/file/d/' + d.archivoId : '';
+    const mes = d.tipo === 'Cancha' ? mesCancha_(d.mes, ss) : null;
     agregarFilas_(hGastos, [[soloDia_(fechaPago_(pago)), d.tipo, texto_(concepto), r.monto, saleDe_(d.tipo), texto_(destinatario), id,
       NOTA_APP + (archivo ? '. Comprobante: ' + archivo : '')]], COL_GASTOS.TOTAL, [7], COLOR_MANUAL);
+    if (mes) hGastos.getRange(hGastos.getLastRow(), COL_GASTOS.MES).setNumberFormat('mmm yyyy').setValue(mes);
     const proc = registroProcesados_(ss);
     proc.marcar(id);
     proc.guardar();
@@ -1099,6 +1139,15 @@ function adminGuardarGasto(pin, d) {
     if (aviso) hoja_(ss, HOJA.REVISAR).deleteRow(aviso.fila);
     return respuestaAdmin_('Listo: gasto de ' + pesos_(r.monto) + ' (' + concepto + ') guardado.');
   });
+}
+
+/** Mes de una cancha elegido en la app: desde el inicio de la temporada hasta 12 meses después de hoy. */
+function mesCancha_(clave, ss) {
+  const mes = mesApp_(clave);
+  if (mes < inicioBusqueda_(hoja_(ss, HOJA.CONFIG)) || mes > sumarMeses_(primerDia_(hoyLocal_()), 12)) {
+    throw new Error('Elegí un mes de la temporada para la cancha.');
+  }
+  return mes;
 }
 
 function saleDe_(tipo) {
@@ -1127,6 +1176,8 @@ function adminEditarGasto(pin, fila, esperado, d) {
     const { f, v } = filaGasto_(h, fila, esperado);
     const antes = { tipo: String(v[1]).trim(), concepto: String(v[2]).trim(), monto: Number(v[3]),
       destinatario: String(v[5]).trim(), fecha: v[0] instanceof Date ? soloDia_(v[0]) : null };
+    const mesGuardado = h.getMaxColumns() >= COL_GASTOS.MES ? h.getRange(f, COL_GASTOS.MES).getValue() : '';
+    antes.mes = antes.tipo === 'Cancha' && antes.fecha ? (mesGuardado instanceof Date ? primerDia_(mesGuardado) : primerDia_(antes.fecha)) : null;
     const bloqueado = gastoBloqueado_(normalizarOp_(v[COL_GASTOS.OPERACION - 1]), v[COL_GASTOS.TOTAL - 1], vinculadoMp_(ss));
     if (TIPOS_GASTO.indexOf(d.tipo) === -1) throw new Error('Elegí el tipo de gasto.');
     const concepto = textoLibre_(d.concepto, 80);
@@ -1144,10 +1195,15 @@ function adminEditarGasto(pin, fila, esperado, d) {
       cambios.push('fecha ' + fechaLarga_(antes.fecha) + ' → ' + fechaLarga_(fecha));
     }
     if (monto !== antes.monto) cambios.push('monto ' + pesos_(antes.monto) + ' → ' + pesos_(monto));
+    // El mes de la cancha se puede cambiar aunque el gasto venga de Mercado Pago (decisión 41).
+    const mes = d.tipo === 'Cancha' ? mesCancha_(d.mes || claveMes_(primerDia_(fecha)), ss) : null;
+    if (mes && (!antes.mes || mes.getTime() !== antes.mes.getTime())) cambios.push('cancha de ' + nombreMes_(mes));
     if (!cambios.length) throw new Error('No cambiaste nada.');
 
     h.getRange(f, 1).setNumberFormat('dd/mm/yyyy');
     h.getRange(f, 1, 1, 6).setValues([[fecha, d.tipo, texto_(concepto), monto, saleDe_(d.tipo), texto_(destinatario)]]);
+    if (h.getMaxColumns() < COL_GASTOS.MES) h.insertColumnsAfter(h.getMaxColumns(), COL_GASTOS.MES - h.getMaxColumns());
+    h.getRange(f, COL_GASTOS.MES).setNumberFormat('mmm yyyy').setValue(mes || '');
     h.getRange(f, COL_GASTOS.TOTAL).setValue(notaCambio_(v[COL_GASTOS.TOTAL - 1], 'Corregido: ' + cambios.join(', ')));
     if (antes.tipo === IMP.ANULADO) h.getRange(f, 1, 1, COL_GASTOS.TOTAL).setFontLine('none');
     return respuestaAdmin_(antes.tipo === IMP.ANULADO ? 'Listo: gasto restaurado.' : 'Listo: gasto guardado.');
@@ -1185,6 +1241,7 @@ function resumenGasto_(p, miId) {
   if (String(get_(p, 'payer.id')) !== miId || idCobrador_(p) === miId) throw new Error('Esa operación es un cobro, no un pago tuyo.');
   return {
     fecha: fechaLarga_(fechaPago_(p)),
+    mes: claveMes_(primerDia_(soloDia_(fechaPago_(p)))),
     monto: Number(p.transaction_amount) || 0,
     destinatario: nombreDestinatario_(p),
   };

@@ -51,8 +51,8 @@ Después de instalar, todo se hace desde la app (DISENO.md, decisión 30). El me
 | Buscar transferencias ahora | Trae las transferencias de Mercado Pago en el momento, sin esperar los 30 minutos |
 | Pago en efectivo | Cuota, otra cosa de la caja o algo que no es de la caja |
 | Gasto | Subís la imagen del comprobante de Mercado Pago; la app lee el N° de operación y trae monto, fecha y destinatario. Si no lo lee, lo escribís |
-| Pagos | Editar (integrante, fecha, monto, imputación, nota) o anular. Lo que vino de Mercado Pago no cambia de monto ni de fecha. Un pago anulado no suma y queda registrado; se puede restaurar |
-| Gastos | Editar o anular, igual que los pagos |
+| Pagos | Editar (integrante, fecha, monto, imputación, nota), repartir entre integrantes (si pagó por varios) o anular. Lo que vino de Mercado Pago no cambia de monto ni de fecha. Un pago anulado no suma y queda registrado; se puede restaurar |
+| Gastos | Editar o anular, igual que los pagos. En la cancha se elige a qué mes corresponde |
 | Integrantes | Alta (después del día 15 paga media cuota ese mes), baja con el último mes que juega y deshacer la baja. En cada integrante: sus pagos y "Editar datos" (apodo, nombre, CUIT, CVU/CBU, cuentas de Mercado Pago, fecha de alta) |
 | Cuota y cancha | Valor nuevo con "vigente desde". Corregir o borrar cualquier valor cargado. Antes de guardar, muestra quién tiene que pagar más o menos |
 | Configuración | Saldo inicial, alias, día de vencimiento de la cancha y cambiar el PIN |
@@ -67,7 +67,7 @@ No hace falta editar la planilla: la escriben la sincronización y el panel de l
 | Hoja | Quién la escribe |
 |---|---|
 | Pagos | La sincronización y el panel. Imputación: **Cuota**, **Deuda anterior**, **Otro de la caja** (suman), **No es de la caja**, **Por clasificar** y **Anulado** (no suman). Los anulados quedan tachados |
-| Gastos | La sincronización (cancha) y el panel. Un gasto anulado queda con tipo **Anulado**, tachado |
+| Gastos | La sincronización (cancha) y el panel. Un gasto anulado queda con tipo **Anulado**, tachado. Columna I: mes de la cancha (vacía: el mes de la fecha de pago) |
 | Integrantes | El panel. Columna K: fecha de alta. Columna L: último mes (baja). Varios CUIT en una celda, separados por coma |
 | Valores | El panel. Cada fila cambia la cuota, la cancha o las dos desde ese mes |
 | Cuotas y Resumen | **La app**: se reescriben solas al sincronizar o al usar el panel |
@@ -110,7 +110,7 @@ Cómo se calcula (DISENO.md, decisiones 10 a 12, 22 y 25):
 
 ## Pruebas
 
-`test/` simula Google Sheets, Drive y la API de Mercado Pago (294 casos):
+`test/` simula Google Sheets, Drive y la API de Mercado Pago (310 casos):
 
 ```
 TZ=America/Argentina/San_Juan node apps-script/test/run.js

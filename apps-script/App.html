@@ -413,7 +413,7 @@ function ir(v, extra) {
   vista = v;
   const vistas = { inicio: vInicio, revisar: vRevisar, efectivo: vEfectivo, gasto: vGasto, integrantes: vIntegrantes,
     integrante: vIntegrante, editarIntegrante: vEditarIntegrante, valores: vValores, valor: vValor, whatsapp: vWhatsapp,
-    pagos: vPagos, pago: vPago, gastos: vGastos, gastoEditar: vGastoEditar, config: vConfig };
+    pagos: vPagos, pago: vPago, repartir: vRepartir, gastos: vGastos, gastoEditar: vGastoEditar, config: vConfig };
   (vistas[v] || vInicio)(extra);
   window.scrollTo(0, 0);
 }
@@ -624,13 +624,22 @@ function paso2Gasto(op, pago) {
     '<div class="tabla" style="grid-template-columns:110px minmax(0,1fr)"><span class="h">Fecha</span><b>' + esc(pago.fecha) + '</b><span class="h">Monto</span><b>' + pesos(pago.monto) + '</b></div>' +
     '<div class="campo"><label for="gDest">Destinatario</label><input type="text" id="gDest" maxlength="80" value="' + esc(pago.destinatario) + '"></div>' +
     '<div class="campo"><label for="gTipo">Tipo</label><select id="gTipo">' + opciones(['Equipamiento', 'Cancha', 'Otro'], 'Equipamiento') + '</select></div>' +
+    campoMesCancha('gMes', pago.mes) +
     '<div class="campo"><label for="gConcepto">Concepto</label><input type="text" id="gConcepto" maxlength="80" placeholder="Ej.: bochas, palos de arquero"></div>' +
     '<button class="prim" id="gGuardar">Guardar gasto</button></div>';
+  const verMes = () => { $('gMes').parentNode.style.display = $('gTipo').value === 'Cancha' ? '' : 'none'; };
+  $('gTipo').onchange = verMes; verMes();
   $('gGuardar').onclick = () => {
-    const d = { op: estadoForm.op, tipo: $('gTipo').value, concepto: $('gConcepto').value, destinatario: $('gDest').value, archivoId: estadoForm.archivoId };
+    const d = { op: estadoForm.op, tipo: $('gTipo').value, mes: $('gMes').value, concepto: $('gConcepto').value, destinatario: $('gDest').value, archivoId: estadoForm.archivoId };
     if (!d.concepto.trim()) return toast('Escribí el concepto.', true);
     servidor('adminGuardarGasto', [pin, d], listo('inicio'), $('gGuardar'));
   };
+}
+
+/** Selector "Cancha de qué mes" (decisión 41). */
+function campoMesCancha(id, elegido) {
+  return '<div class="campo"><label for="' + id + '">Cancha de qué mes</label><select id="' + id + '">' + opciones(ADMIN.mesesTemporada, elegido) +
+    '</select><p class="ayuda" style="margin-top:6px">La app la cuenta como pagada en ese mes, aunque la hayas pagado antes o después.</p></div>';
 }
 
 /** Achica la foto (máx. 1600 px, JPEG) antes de mandarla. */
@@ -757,6 +766,7 @@ function vPagos() {
 function vPago(x) {
   if (!x || !x.p) return ir('pagos');
   const p = x.p;
+  estadoForm = {};
   const anulado = p.imputacion === 'Anulado';
   const volver = x.integrante ? () => abrirIntegrante(x.integrante) : 'pagos';
   const seguir = () => (x.integrante ? abrirIntegrante(x.integrante) : ir('pagos'));
@@ -773,7 +783,8 @@ function vPago(x) {
     '<div class="campo"><label for="pImp">Es por</label><select id="pImp">' + opciones(imps, anulado ? '' : p.imputacion, anulado ? 'Elegí' : '') + '</select></div>' +
     '<div class="campo"><label for="pNota">Nota (opcional)</label><input type="text" id="pNota" maxlength="200"></div>' +
     '<button class="prim" id="pGuardar">' + (anulado ? 'Restaurar pago' : 'Guardar cambios') + '</button>' +
-    (anulado ? '' : '<button class="peligro" id="pAnular">Anular pago</button><p class="ayuda">Un pago anulado deja de sumar, pero queda registrado.</p>') +
+    (anulado ? '' : '<button class="sec" id="pRepartir" style="min-height:48px">Repartir entre integrantes</button>' +
+      '<button class="peligro" id="pAnular">Anular pago</button><p class="ayuda">Repartir: si pagó por varios (por ejemplo, por él y un familiar). Un pago anulado deja de sumar, pero queda registrado.</p>') +
     (p.notas ? '<p class="ayuda">Notas: ' + esc(p.notas) + '</p>' : '') + '</div>';
   const esperado = { apodo: p.apodo, monto: p.monto };
   $('pGuardar').onclick = () => {
@@ -783,6 +794,44 @@ function vPago(x) {
   };
   if ($('pAnular')) dobleToque($('pAnular'), 'Tocá de nuevo para anular', () =>
     servidor('adminAnularPago', [pin, p.fila, esperado], despues(seguir), $('pAnular')));
+  if ($('pRepartir')) $('pRepartir').onclick = () => ir('repartir', x);
+}
+
+/** Repartir un pago entre integrantes (decisión 40): las partes tienen que sumar el monto del pago. */
+function vRepartir(x) {
+  if (!x || !x.p) return ir('pagos');
+  const p = x.p;
+  const volverPago = () => ir('pago', x);
+  cabeceraAdmin('Repartir pago', p.apodo + ' · ' + p.fecha + ' · ' + pesos(p.monto), volverPago);
+  const partes = estadoForm.partes && estadoForm.partesDe === p.fila ? estadoForm.partes
+    : [{ apodo: p.apodo, monto: '', imputacion: p.imputacion === 'Por clasificar' ? 'Cuota' : p.imputacion }, { apodo: '', monto: '', imputacion: 'Cuota' }];
+  estadoForm = { partes: partes, partesDe: p.fila };
+  const leer = () => partes.forEach((q, i) => { q.apodo = $('rQuien' + i).value; q.monto = $('rMonto' + i).value; q.imputacion = $('rImp' + i).value; });
+  const suma = () => partes.reduce((s, q) => s + (Number(q.monto) || 0), 0);
+  $('s-admin').innerHTML = '<div class="card"><p class="ayuda">Si pagó por varios, repartí el monto. Las partes tienen que sumar ' + pesos(p.monto) +
+    '. Todas quedan con el mismo N° de operación.</p>' +
+    partes.map((q, i) => '<div class="pendiente"><span class="lbl">Parte ' + (i + 1) + '</span>' +
+      '<div class="campo"><label class="solo-lector" for="rQuien' + i + '">Integrante</label><select id="rQuien' + i + '">' + opciones(quienes(), q.apodo, 'Integrante') + '</select></div>' +
+      '<div class="dos"><div class="campo"><label for="rMonto' + i + '">Monto ($)</label><input type="number" id="rMonto' + i + '" inputmode="numeric" min="1" step="1" value="' + esc(q.monto) + '"></div>' +
+      '<div class="campo"><label for="rImp' + i + '">Es por</label><select id="rImp' + i + '">' + opciones(IMPUTACIONES, q.imputacion) + '</select></div></div></div>').join('') +
+    (partes.length < 5 ? '<button class="link" id="rMas" style="align-self:flex-start">Agregar otra parte</button>' : '') +
+    '<div class="aviso-box info" id="rSuma"></div><button class="prim" id="rGuardar">Repartir</button></div>';
+  const actualizar = () => {
+    leer();
+    const falta = Math.round((p.monto - suma()) * 100) / 100;
+    $('rSuma').textContent = 'Suma: ' + pesos(suma()) + ' de ' + pesos(p.monto) + (falta ? (falta > 0 ? ' · faltan ' + pesos(falta) : ' · sobran ' + pesos(-falta)) : ' · justo');
+    $('rSuma').className = 'aviso-box ' + (falta ? 'alerta' : 'info');
+    $('rGuardar').disabled = !!falta || partes.some(q => !q.apodo || !(Number(q.monto) > 0));
+  };
+  $('s-admin').querySelectorAll('input, select').forEach(e => { e.oninput = actualizar; e.onchange = actualizar; });
+  actualizar();
+  if ($('rMas')) $('rMas').onclick = () => { leer(); partes.push({ apodo: '', monto: '', imputacion: 'Cuota' }); vRepartir(x); };
+  $('rGuardar').onclick = () => {
+    leer();
+    const seguir = () => (x.integrante ? abrirIntegrante(x.integrante) : ir('pagos'));
+    servidor('adminRepartirPago', [pin, p.fila, { apodo: p.apodo, monto: p.monto }, partes.map(q => ({ apodo: q.apodo, monto: q.monto, imputacion: q.imputacion }))],
+      despues(seguir), $('rGuardar'));
+  };
 }
 
 function vGastos() {
@@ -801,6 +850,7 @@ function vGastoEditar(g) {
     (g.anulado ? '<div class="aviso-box alerta">Este gasto está anulado: no resta. Para restaurarlo, elegí el tipo y tocá "Restaurar gasto".</div>' : '') +
     (g.bloqueado ? '<div class="aviso-box info">Vino de Mercado Pago: el monto y la fecha no se cambian. Si está mal, anulalo.</div>' : '') +
     '<div class="campo"><label for="geTipo">Tipo</label><select id="geTipo">' + opciones(TIPOS_GASTO, g.anulado ? '' : g.tipo, g.anulado ? 'Elegí' : '') + '</select></div>' +
+    campoMesCancha('geMes', g.mes) +
     '<div class="campo"><label for="geConcepto">Concepto</label><input type="text" id="geConcepto" maxlength="80" value="' + esc(g.concepto) + '"></div>' +
     '<div class="campo"><label for="geDest">Destinatario</label><input type="text" id="geDest" maxlength="80" value="' + esc(g.destinatario) + '"></div>' +
     '<div class="dos"><div class="campo"><label for="geMonto">Monto ($)</label><input type="number" id="geMonto" inputmode="numeric" min="1" step="1" value="' + esc(g.monto) + '"' + (g.bloqueado ? ' disabled' : '') + '></div>' +
@@ -809,8 +859,10 @@ function vGastoEditar(g) {
     (g.anulado ? '' : '<button class="peligro" id="geAnular">Anular gasto</button><p class="ayuda">Un gasto anulado deja de restar, pero queda registrado.</p>') +
     (g.notas ? '<p class="ayuda">Notas: ' + esc(g.notas) + '</p>' : '') + '</div>';
   const esperado = { monto: g.monto, concepto: g.concepto };
+  const verMes = () => { $('geMes').parentNode.style.display = $('geTipo').value === 'Cancha' ? '' : 'none'; };
+  $('geTipo').onchange = verMes; verMes();
   $('geGuardar').onclick = () => {
-    const d = { tipo: $('geTipo').value, concepto: $('geConcepto').value, destinatario: $('geDest').value, monto: $('geMonto').value, fecha: $('geFecha').value };
+    const d = { tipo: $('geTipo').value, mes: $('geMes').value, concepto: $('geConcepto').value, destinatario: $('geDest').value, monto: $('geMonto').value, fecha: $('geFecha').value };
     if (!d.tipo) return toast('Elegí el tipo de gasto.', true);
     if (!d.concepto.trim()) return toast('Escribí el concepto.', true);
     servidor('adminEditarGasto', [pin, g.fila, esperado, d], listo('gastos'), $('geGuardar'));

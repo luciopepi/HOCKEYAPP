@@ -1263,6 +1263,56 @@ section('B14 gastos: una transferencia recibida nunca se toma como gasto; CUIT c
   check('acepta un CUIT escrito con espacios', !x.e && w.sheet('Integrantes').rows(5)[0][5] === '20123456789', x.e ? x.e.message : w.sheet('Integrantes').rows(5)[0][5]);
 }
 
+section('B15 repartir un pago entre integrantes');
+{
+  const p = pay({ id: 8501, created: '2026-10-10 10:00', payerId: ID.Juancho, cuit: '20301112223', amount: 30000 });
+  const w = mundoAdmin(basePayments().concat([p]));
+  sync(w, '2026-10-10 11:00');
+  let x = intentar(() => w.ctx.adminEntrar(PIN));
+  const pg = x.r.pagos.find(q => rowsOf(w, 'Pagos')[q.fila - 2][8] === '8501');
+  check('la transferencia de $30.000 entró a Juancho, bloqueada', pg && pg.apodo === 'Juancho' && pg.monto === 30000 && pg.bloqueado, JSON.stringify(pg));
+  const esperado = { apodo: 'Juancho', monto: 30000 };
+  x = intentar(() => w.ctx.adminRepartirPago(PIN, pg.fila, esperado, [{ apodo: 'Juancho', monto: '15000', imputacion: 'Cuota' }, { apodo: 'Colo', monto: '10000', imputacion: 'Cuota' }]));
+  check('si no suma el total: error', x.e && /sumar \$30\.000/.test(x.e.message), x.e && x.e.message);
+  x = intentar(() => w.ctx.adminRepartirPago(PIN, pg.fila, esperado, [{ apodo: 'Juancho', monto: '15000', imputacion: 'Cuota' }]));
+  check('una sola parte: error', x.e && /2 a 5/.test(x.e.message));
+  x = intentar(() => w.ctx.adminRepartirPago(PIN, pg.fila, esperado, [{ apodo: 'Juancho', monto: '15000', imputacion: 'Cuota' }, { apodo: 'Colo', monto: '15000', imputacion: 'Cuota' }]));
+  check('reparte sin error', !x.e, x.e && x.e.stack);
+  const filas = rowsOf(w, 'Pagos').filter(r => r[8] === '8501');
+  check('dos filas con el mismo N°: $15.000 Juancho y $15.000 Colo', filas.length === 2 && filas.some(r => r[1] === 'Juancho' && r[2] === '15000') &&
+    filas.some(r => r[1] === 'Colo' && r[2] === '15000' && /Parte de un pago de \$30\.000/.test(r[9])), JSON.stringify(filas));
+  check('la caja no cambia', x.r.datos.caja.cobrado === intentar(() => w.ctx.datosApp_()).r.caja.cobrado);
+  sync(w, '2026-10-10 12:00');
+  check('la búsqueda siguiente no la vuelve a cargar', rowsOf(w, 'Pagos').filter(r => r[8] === '8501').length === 2 && !findOp(revisar(w), 7, 8501).length);
+  p.status = 'refunded'; p.transaction_amount_refunded = 30000; p.date_last_updated = mpDate('2026-10-10 13:00');
+  sync(w, '2026-10-10 14:00');
+  x = intentar(() => w.ctx.adminAnularDevuelto(PIN, 'R8501'));
+  check('si Mercado Pago la devuelve, se anulan las dos partes', !x.e && rowsOf(w, 'Pagos').filter(r => r[8] === '8501' && r[3] === 'Anulado').length === 2, x.e && x.e.message);
+}
+
+section('B16 mes de la cancha: se elige al cargar o editar el gasto');
+{
+  const w = mundoAdmin(basePayments().concat([pay({ id: 186000008601, created: '2026-10-10 10:00', payerId: ME, collector: CLUB, amount: 150000 })]));
+  sync(w, '2026-10-10 11:00');
+  check('la cancha de noviembre pagada en octubre queda como pago al club por otro monto', findOp(revisar(w), 7, '186000008601').length === 1);
+  let x = intentar(() => w.ctx.adminBuscarOperacion(PIN, '186000008601'));
+  check('al buscarla propone el mes del pago', !x.e && x.r.pago.mes === '2026-10', x.e ? x.e.message : JSON.stringify(x.r.pago));
+  x = intentar(() => w.ctx.adminGuardarGasto(PIN, { op: '186000008601', tipo: 'Cancha', mes: '2026-11', concepto: 'Cancha noviembre' }));
+  check('se guarda como cancha de noviembre y se cierra el aviso', !x.e && rowsOf(w, 'Gastos')[1][8].indexOf('01/11/2026') === 0 && !findOp(revisar(w), 7, '186000008601').length,
+    x.e ? x.e.message : JSON.stringify(rowsOf(w, 'Gastos')) + ' | ' + JSON.stringify(revisar(w)));
+  check('octubre sigue con su cancha pagada', x.r.datos.cancha.pagada && x.r.datos.cancha.fechaPago === '02/10');
+  w.setNow(nowIso('2026-11-05 10:00'));
+  w.run('recalcular_');
+  check('en noviembre figura pagada (con la fecha en que se pagó)', w.ctx.datosApp_().cancha.pagada && w.ctx.datosApp_().cancha.fechaPago === '10/10', JSON.stringify(w.ctx.datosApp_().cancha));
+  x = intentar(() => w.ctx.adminEntrar(PIN));
+  const g = x.r.gastos.find(y => y.concepto === 'Cancha noviembre');
+  check('el panel muestra el mes elegido y el gasto bloqueado', g && g.mes === '2026-11' && g.bloqueado, JSON.stringify(g));
+  x = intentar(() => w.ctx.adminEditarGasto(PIN, g.fila, { monto: g.monto, concepto: g.concepto }, { tipo: 'Cancha', mes: '2026-12', concepto: g.concepto, destinatario: g.destinatario }));
+  check('se cambia el mes aunque venga de Mercado Pago', !x.e && /cancha de diciembre 2026/.test(rowsOf(w, 'Gastos')[1][7]) && !x.r.datos.cancha.pagada, x.e ? x.e.message : JSON.stringify(x.r.datos.cancha));
+  x = intentar(() => w.ctx.adminEditarGasto(PIN, g.fila, { monto: g.monto, concepto: g.concepto }, { tipo: 'Cancha', mes: '2025-01', concepto: g.concepto, destinatario: g.destinatario }));
+  check('no acepta un mes fuera de la temporada', x.e && /mes de la temporada/.test(x.e.message));
+}
+
 section('A11 cualquier orden de archivos en el editor');
 {
   const archivos = ['Codigo.gs', 'Calculo.gs', 'Web.gs'];

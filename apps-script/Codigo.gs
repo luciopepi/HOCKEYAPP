@@ -42,7 +42,7 @@ const CELDA = {
 // Columnas (empezando en 1).
 const COL_PAGOS = { FECHA: 1, INTEGRANTE: 2, MONTO: 3, OPERACION: 9, TOTAL: 10 };
 const COL_INT = { APODO: 2, NOMBRE: 3, APELLIDO: 4, CUIT: 6, CVU: 7, AUTO: 9, ID_MP: 10, ALTA: 11, ULTIMO: 12, TOTAL: 12 };
-const COL_GASTOS = { FECHA: 1, TIPO: 2, MONTO: 4, OPERACION: 7, TOTAL: 8 };
+const COL_GASTOS = { FECHA: 1, TIPO: 2, MONTO: 4, OPERACION: 7, TOTAL: 8, MES: 9 }; // MES: a qué mes corresponde una cancha
 const COL_REVISAR = { OPERACION: 8, TOTAL: 9 };
 
 const TIPOS_TRANSFERENCIA = ['money_transfer', 'account_fund'];

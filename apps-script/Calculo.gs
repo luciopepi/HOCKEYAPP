@@ -163,6 +163,14 @@ function asegurarEstructura_(ss) {
       SpreadsheetApp.newDataValidation().requireValueInList(IMPUTACIONES, true).setAllowInvalid(true).build());
     marca.setNote(NOTA_IMPUTACIONES);
   }
+  const hg = hoja_(ss, HOJA.GASTOS);
+  if (hg.getMaxColumns() < COL_GASTOS.MES) hg.insertColumnsAfter(hg.getMaxColumns(), COL_GASTOS.MES - hg.getMaxColumns());
+  const encMes = hg.getRange(1, COL_GASTOS.MES);
+  if (!String(encMes.getValue()).trim()) {
+    encMes.setValue('Mes de la cancha').setFontWeight('bold').setFontColor('#FFFFFF').setBackground('#0F2340').setFontFamily('Arial')
+      .setNote('Solo para el tipo Cancha. Vacío: el mes de la fecha de pago. Se elige desde la app (decisión 41).');
+    hg.getRange(2, COL_GASTOS.MES, Math.max(hg.getMaxRows() - 1, 1), 1).setNumberFormat('mmm yyyy');
+  }
   // La búsqueda de transferencias empieza en el inicio de la temporada (decisión 32).
   const config = hoja_(ss, HOJA.CONFIG);
   const etiqueta = config.getRange('A33');
@@ -199,12 +207,13 @@ function leerDatos_(ss) {
   const ng = hg.getLastRow() - 1;
   const gastos = [];
   if (ng > 0) {
-    hg.getRange(2, 1, ng, COL_GASTOS.TOTAL).getValues().forEach((f, i) => {
+    hg.getRange(2, 1, ng, Math.min(hg.getMaxColumns(), COL_GASTOS.MES)).getValues().forEach((f, i) => {
       if (!(f[0] instanceof Date) || !(Number(f[3]) > 0)) return;
       const tipo = String(f[1]).trim();
+      const mes = f[COL_GASTOS.MES - 1] instanceof Date ? primerDia_(f[COL_GASTOS.MES - 1]) : null;
       gastos.push({ fila: i + 2, fecha: f[0], tipo: tipo, concepto: String(f[2]), monto: Number(f[3]),
         destinatario: String(f[5]), op: normalizarOp_(f[COL_GASTOS.OPERACION - 1]), notas: String(f[7]),
-        anulado: tipo === IMP.ANULADO });
+        anulado: tipo === IMP.ANULADO, mes: tipo === 'Cancha' ? (mes || primerDia_(soloDia_(f[0]))) : null });
     });
   }
 
@@ -327,8 +336,8 @@ function calcularEstado_(d) {
 
   const costo = valorEn_(d.valores, 'cancha', mesActual);
   const cuotaMes = cuotaDe(mesActual);
-  const finMes = sumarMeses_(mesActual, 1);
-  const pagoCancha = gastos.find(g => g.tipo === 'Cancha' && g.fecha >= mesActual && g.fecha < finMes);
+  // La cancha del mes es la que corresponde a este mes (decisión 41), no la que se pagó en este mes.
+  const pagoCancha = gastos.find(g => g.tipo === 'Cancha' && g.mes && g.mes.getTime() === mesActual.getTime());
   const recaudado = integrantes.reduce((s, x) => s + x.aporteMes, 0);
   const activos = integrantes.filter(x => x.cargoActual > 0);
 

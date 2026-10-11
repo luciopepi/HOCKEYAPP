@@ -2,7 +2,7 @@
 
 Decisiones tomadas con Lucio (administrador) antes de programar. Cada cambio de diseño se anota acá primero.
 
-Estado: **etapa 1 instalada** y en prueba con datos reales; se amplía con las decisiones 30 a 38. Las etapas 2 y 3 se diseñan antes de programarlas.
+Estado: **etapa 1 instalada** y en prueba con datos reales; se amplía con las decisiones 30 a 41. Las etapas 2 y 3 se diseñan antes de programarlas.
 
 ## Decisiones
 
@@ -45,10 +45,13 @@ Estado: **etapa 1 instalada** y en prueba con datos reales; se amplía con las d
 | 36 | Gasto mal cargado | Como los pagos: se edita (fecha, monto, tipo, concepto, destinatario) o se anula. Lo que vino de Mercado Pago no cambia de monto ni de fecha. |
 | 37 | Editar integrante | Apodo (se cambia también en sus pagos), nombre, apellido, CUIT, CVU/CBU, cuentas de Mercado Pago reconocidas (se pueden quitar) y fecha de alta. Se puede deshacer la baja. |
 | 38 | Configuración en la app | Saldo inicial de la caja, alias para transferir, día de vencimiento de la cancha y cambiar el PIN (pide el actual). |
+| 39 | Gastos sin comprobante de Mercado Pago | No se cargan. Todos los gastos salen de Mercado Pago; el efectivo se deposita antes de gastarlo. |
+| 40 | Un pago por varios integrantes | Botón "Repartir" en el pago: se divide entre integrantes (por ejemplo, $15.000 a Mono y $15.000 a Cascini). Queda el mismo N° de Mercado Pago y la suma no cambia. |
+| 41 | Mes de la cancha | Al cargar o editar un gasto de cancha se elige a qué mes corresponde (por defecto, el de la fecha de pago). "Cancha pagada" usa ese mes. Se puede cambiar aunque el gasto venga de Mercado Pago. |
 
 ## Etapas
 
-1. **Ya:** sincronización con Mercado Pago, app pública y panel del administrador: efectivo, clasificar pagos, altas y bajas, valores con "vigente desde", mensaje para WhatsApp. Ampliada con las decisiones 30 a 38: todo se corrige desde la app.
+1. **Ya:** sincronización con Mercado Pago, app pública y panel del administrador: efectivo, clasificar pagos, altas y bajas, valores con "vigente desde", mensaje para WhatsApp. Ampliada con las decisiones 30 a 41: todo se corrige desde la app.
 2. Ingreso con Google o código por mail, reclamos, "Quiero sumarme", cuentas asociadas y comprobantes con lectura del N° de operación.
 3. Saldo de la reserva "Caja Hockey" de Mercado Pago.
 
