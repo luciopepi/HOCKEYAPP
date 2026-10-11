@@ -222,6 +222,7 @@ class Range {
   setDataValidation(rule) { this.forEachCell(x => { x.validation = rule; }); return this; }
   setFontColor(c) { this.forEachCell(x => { x.color = c; }); return this; }
   setFontFamily(f) { this.forEachCell(x => { x.font = f; }); return this; }
+  setFontLine(l) { this.forEachCell(x => { x.line = l; }); return this; }
   setFontWeight() { return this; }
   setBackground() { return this; }
   setHorizontalAlignment() { return this; }

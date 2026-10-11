@@ -24,8 +24,9 @@ const IMP = {
   OTRO_CAJA: 'Otro de la caja',
   NO_CAJA: 'No es de la caja',
   CLASIFICAR: 'Por clasificar',
+  ANULADO: 'Anulado', // también es el tipo de un gasto anulado
 };
-const IMPUTACIONES = [IMP.CUOTA, IMP.DEUDA_ANTERIOR, IMP.OTRO_CAJA, IMP.NO_CAJA, IMP.CLASIFICAR];
+const IMPUTACIONES = [IMP.CUOTA, IMP.DEUDA_ANTERIOR, IMP.OTRO_CAJA, IMP.NO_CAJA, IMP.CLASIFICAR, IMP.ANULADO];
 
 function imputacion_(v) {
   const s = String(v == null ? '' : v).trim();
@@ -34,7 +35,7 @@ function imputacion_(v) {
   return s;
 }
 
-/** ¿El pago suma a la caja? Los "No es de la caja" y los "Por clasificar" no. */
+/** ¿El pago suma a la caja? Los "No es de la caja", "Por clasificar" y "Anulado" no. */
 function sumaACaja_(imp) {
   return imp === IMP.CUOTA || imp === IMP.DEUDA_ANTERIOR || imp === IMP.OTRO_CAJA;
 }
@@ -70,17 +71,25 @@ function hoyLocal_() {
 
 /** Lee la hoja Valores: [{desde, cuota, cancha}] ordenado. Una celda vacía mantiene el valor anterior. */
 function leerValores_(ss) {
+  return filasValores_(ss).map(v => ({ desde: v.desde, cuota: v.cuota, cancha: v.cancha }));
+}
+
+/** Las filas de Valores con su número de fila, para corregirlas desde el panel. */
+function filasValores_(ss) {
   const h = hojaValores_(ss);
   const n = h.getLastRow() - 1;
   if (n < 1) return [];
-  return h.getRange(2, 1, n, 3).getValues()
-    .filter(f => f[0] instanceof Date)
-    .map(f => ({
+  const lista = [];
+  h.getRange(2, 1, n, 3).getValues().forEach((f, i) => {
+    if (!(f[0] instanceof Date)) return;
+    lista.push({
+      fila: i + 2,
       desde: primerDia_(f[0]),
       cuota: Number(f[1]) > 0 ? Number(f[1]) : null,
       cancha: Number(f[2]) > 0 ? Number(f[2]) : null,
-    }))
-    .sort((a, b) => a.desde - b.desde);
+    });
+  });
+  return lista.sort((a, b) => a.desde - b.desde);
 }
 
 /** Valor vigente en un mes ("cuota" o "cancha"). */
@@ -154,10 +163,16 @@ function asegurarEstructura_(ss) {
       SpreadsheetApp.newDataValidation().requireValueInList(IMPUTACIONES, true).setAllowInvalid(true).build());
     marca.setNote(NOTA_IMPUTACIONES);
   }
+  // La búsqueda de transferencias empieza en el inicio de la temporada (decisión 32).
+  const config = hoja_(ss, HOJA.CONFIG);
+  const etiqueta = config.getRange('A33');
+  if (String(etiqueta.getValue()).trim() === 'Importar pagos desde') {
+    etiqueta.setValue('Importar pagos desde (ya no se usa: se busca desde el inicio de la temporada)');
+  }
 }
 
 const NOTA_IMPUTACIONES = 'Cuota: suma a la cuota. Deuda anterior y Otro de la caja: suman a la caja, no a la cuota. ' +
-  'No es de la caja (asados, etc.) y Por clasificar: no suman.';
+  'No es de la caja (asados, etc.), Por clasificar y Anulado: no suman. Se cambian desde el panel de la app.';
 
 // ------------------------------------------------------------- lectura
 
@@ -175,7 +190,8 @@ function leerDatos_(ss) {
     v.forEach((f, i) => {
       if (!(f[0] instanceof Date) || !(Number(f[2]) > 0)) return;
       pagos.push({ fila: i + 2, fecha: f[0], apodo: String(f[1]).trim(), monto: Number(f[2]),
-        imputacion: imputacion_(f[3]), medio: String(f[4]), op: normalizarOp_(f[COL_PAGOS.OPERACION - 1]) });
+        imputacion: imputacion_(f[3]), medio: String(f[4]), op: normalizarOp_(f[COL_PAGOS.OPERACION - 1]),
+        notas: String(f[COL_PAGOS.TOTAL - 1]) });
     });
   }
 
@@ -183,10 +199,12 @@ function leerDatos_(ss) {
   const ng = hg.getLastRow() - 1;
   const gastos = [];
   if (ng > 0) {
-    hg.getRange(2, 1, ng, COL_GASTOS.TOTAL).getValues().forEach(f => {
+    hg.getRange(2, 1, ng, COL_GASTOS.TOTAL).getValues().forEach((f, i) => {
       if (!(f[0] instanceof Date) || !(Number(f[3]) > 0)) return;
-      gastos.push({ fecha: f[0], tipo: String(f[1]), concepto: String(f[2]), monto: Number(f[3]),
-        destinatario: String(f[5]) });
+      const tipo = String(f[1]).trim();
+      gastos.push({ fila: i + 2, fecha: f[0], tipo: tipo, concepto: String(f[2]), monto: Number(f[3]),
+        destinatario: String(f[5]), op: normalizarOp_(f[COL_GASTOS.OPERACION - 1]), notas: String(f[7]),
+        anulado: tipo === IMP.ANULADO });
     });
   }
 
@@ -208,6 +226,7 @@ function leerDatos_(ss) {
  * d = { inicio, saldoInicial, valores, miembros, pagos, gastos, hoy }
  */
 function calcularEstado_(d) {
+  const gastos = d.gastos.filter(g => !g.anulado);
   const mesActual = primerDia_(d.hoy);
   const fin = sumarMeses_(d.inicio, MESES_VISIBLES - 1);
   const ultimoVisible = sumarMeses_(mesActual, 2) > fin ? sumarMeses_(mesActual, 2) : fin;
@@ -301,7 +320,7 @@ function calcularEstado_(d) {
     });
   });
 
-  const gastado = d.gastos.reduce((s, g) => s + g.monto, 0);
+  const gastado = gastos.reduce((s, g) => s + g.monto, 0);
   const cobrado = cobradoCuotas + cobradoAdmin + cobradoOtros;
   const saldo = d.saldoInicial + cobrado - gastado;
   const adelantos = integrantes.reduce((s, x) => s + x.adelantado, 0);
@@ -309,7 +328,7 @@ function calcularEstado_(d) {
   const costo = valorEn_(d.valores, 'cancha', mesActual);
   const cuotaMes = cuotaDe(mesActual);
   const finMes = sumarMeses_(mesActual, 1);
-  const pagoCancha = d.gastos.find(g => g.tipo === 'Cancha' && g.fecha >= mesActual && g.fecha < finMes);
+  const pagoCancha = gastos.find(g => g.tipo === 'Cancha' && g.fecha >= mesActual && g.fecha < finMes);
   const recaudado = integrantes.reduce((s, x) => s + x.aporteMes, 0);
   const activos = integrantes.filter(x => x.cargoActual > 0);
 

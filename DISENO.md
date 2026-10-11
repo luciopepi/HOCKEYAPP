@@ -2,7 +2,7 @@
 
 Decisiones tomadas con Lucio (administrador) antes de programar. Cada cambio de diseño se anota acá primero.
 
-Estado: **etapa 1 programada**, pendiente de prueba con datos reales. Las etapas 2 y 3 se diseñan antes de programarlas.
+Estado: **etapa 1 instalada** y en prueba con datos reales; se amplía con las decisiones 30 a 38. Las etapas 2 y 3 se diseñan antes de programarlas.
 
 ## Decisiones
 
@@ -36,10 +36,19 @@ Estado: **etapa 1 programada**, pendiente de prueba con datos reales. Las etapas
 | 27 | "Falta pagar este mes" (público) | Nombre y cuántas cuotas debe. Sin montos en pesos por persona. |
 | 28 | Pestaña "Caja" (público) | Saldo, cobrado por mes y lista de gastos. Sin el detalle de quién pagó cuánto. |
 | 29 | Antes de programar | Diseño de pantallas de la etapa 1 para revisar en el lienzo de diseño. |
+| 30 | Todo desde la app | El administrador no edita la planilla. Solo quedan en el menú de la planilla la clave de Mercado Pago, activar la sincronización y recuperar el PIN olvidado. |
+| 31 | Pago mal cargado | Se edita (integrante, fecha, monto, imputación, nota) o se anula. Un pago anulado deja de sumar y queda registrado. Lo que tiene N° de operación de Mercado Pago no cambia de monto ni de fecha: se reasigna, se reclasifica o se anula. |
+| 32 | Qué muestra "Para revisar" | Toda transferencia no cargada desde el inicio de la temporada (01/10/2026). Si ya hay un pago cargado del mismo monto, con un día de diferencia como máximo y sin N° de Mercado Pago, avisa "Posible duplicado" y ofrece "Es el mismo". |
+| 33 | Buscar transferencias | Botón "Buscar transferencias ahora" en el panel, con PIN. Además, sigue la búsqueda automática cada 30 minutos. |
+| 34 | Clave de Mercado Pago | Se guarda y se activa la sincronización desde el menú de la planilla. Así nadie puede cambiar la clave con solo saber el PIN. |
+| 35 | Corregir valores | Se corrige o borra cualquier valor de cuota o cancha, también de meses pasados. Antes de guardar, la app muestra quién tiene que pagar más o menos. |
+| 36 | Gasto mal cargado | Como los pagos: se edita (fecha, monto, tipo, concepto, destinatario) o se anula. Lo que vino de Mercado Pago no cambia de monto ni de fecha. |
+| 37 | Editar integrante | Apodo (se cambia también en sus pagos), nombre, apellido, CUIT, CVU/CBU, cuentas de Mercado Pago reconocidas (se pueden quitar) y fecha de alta. Se puede deshacer la baja. |
+| 38 | Configuración en la app | Saldo inicial de la caja, alias para transferir, día de vencimiento de la cancha y cambiar el PIN (pide el actual). |
 
 ## Etapas
 
-1. **Ya:** sincronización con Mercado Pago, app pública y panel del administrador: efectivo, clasificar pagos, altas y bajas, valores con "vigente desde", mensaje para WhatsApp.
+1. **Ya:** sincronización con Mercado Pago, app pública y panel del administrador: efectivo, clasificar pagos, altas y bajas, valores con "vigente desde", mensaje para WhatsApp. Ampliada con las decisiones 30 a 38: todo se corrige desde la app.
 2. Ingreso con Google o código por mail, reclamos, "Quiero sumarme", cuentas asociadas y comprobantes con lectura del N° de operación.
 3. Saldo de la reserva "Caja Hockey" de Mercado Pago.
 

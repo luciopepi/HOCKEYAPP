@@ -33,8 +33,11 @@ Script de Google Apps Script para la planilla **Caja Hockey**. Corre gratis en l
 7. **Caja Hockey → Definir PIN del panel de administrador** (6 a 12 números).
 8. Mercado Pago (si todavía no lo hiciste):
    - **Caja Hockey → Guardar clave de Mercado Pago**: pegá el Access Token de producción (empieza con `APP_USR-`). Lo pegás vos; no lo compartas.
-   - **Caja Hockey → Probar conexión con Mercado Pago**. Si las transferencias del 09/10 dicen "(ya está en Pagos)", poné 09/10/2026 en Config B33.
+   - **Caja Hockey → Probar conexión con Mercado Pago**.
    - **Caja Hockey → Activar sincronización cada 30 minutos**.
+   - La primera búsqueda revisa todo desde el inicio de la temporada (Config B5). Lo que no esté cargado aparece en la app, en "Para revisar".
+
+Después de instalar, todo se hace desde la app (DISENO.md, decisión 30). El menú de la planilla queda para la clave de Mercado Pago, la sincronización y recuperar el PIN.
 
 ## La app
 
@@ -44,25 +47,31 @@ Script de Google Apps Script para la planilla **Caja Hockey**. Corre gratis en l
 
 | Pantalla | Para qué |
 |---|---|
-| Para revisar | Asignar transferencias sin dueño (se guarda la cuenta y las próximas entran solas) o marcarlas "No es de la caja". Clasificar los pagos que no son múltiplo de la cuota |
+| Para revisar | Asignar transferencias sin dueño (se guarda la cuenta y las próximas entran solas) o marcarlas "No es de la caja". Si ya había un pago igual cargado a mano, avisa "Posible duplicado" y ofrece "Es el mismo". Clasificar los pagos que no son múltiplo de la cuota |
+| Buscar transferencias ahora | Trae las transferencias de Mercado Pago en el momento, sin esperar los 30 minutos |
 | Pago en efectivo | Cuota, otra cosa de la caja o algo que no es de la caja |
 | Gasto | Subís la imagen del comprobante de Mercado Pago; la app lee el N° de operación y trae monto, fecha y destinatario. Si no lo lee, lo escribís |
-| Integrantes | Alta (después del día 15 paga media cuota ese mes) y baja con el último mes que juega. En cada integrante, sus pagos y la opción de reclasificarlos |
-| Cuota y cancha | Valor nuevo con "vigente desde" y aviso de quién va a deber diferencia |
+| Pagos | Editar (integrante, fecha, monto, imputación, nota) o anular. Lo que vino de Mercado Pago no cambia de monto ni de fecha. Un pago anulado no suma y queda registrado; se puede restaurar |
+| Gastos | Editar o anular, igual que los pagos |
+| Integrantes | Alta (después del día 15 paga media cuota ese mes), baja con el último mes que juega y deshacer la baja. En cada integrante: sus pagos y "Editar datos" (apodo, nombre, CUIT, CVU/CBU, cuentas de Mercado Pago, fecha de alta) |
+| Cuota y cancha | Valor nuevo con "vigente desde". Corregir o borrar cualquier valor cargado. Antes de guardar, muestra quién tiene que pagar más o menos |
+| Configuración | Saldo inicial, alias, día de vencimiento de la cancha y cambiar el PIN |
 | Mensaje para WhatsApp | Arma el texto con la cancha del mes y quién falta, para copiar o abrir WhatsApp |
 
 Instalarla en el celular: abrí el link → Android: menú ⋮ → **Agregar a la pantalla principal**; iPhone: Compartir → **Agregar a inicio**.
 
 ## La planilla
 
+No hace falta editar la planilla: la escriben la sincronización y el panel de la app.
+
 | Hoja | Quién la escribe |
 |---|---|
-| Pagos | La sincronización, el panel o vos. Imputación: **Cuota**, **Deuda anterior**, **Otro de la caja** (suman), **No es de la caja** y **Por clasificar** (no suman) |
-| Gastos | La sincronización (cancha), el panel o vos |
-| Integrantes | El panel o vos. Columna K: fecha de alta. Columna L: último mes (baja). Varios CUIT en una celda, separados por coma |
-| Valores | El panel o vos. Cada fila cambia la cuota, la cancha o las dos desde ese mes |
-| Cuotas y Resumen | **La app**: se reescriben solas al sincronizar, al usar el panel o al editar la planilla. No las edites a mano |
-| Por revisar | La sincronización. Lo resolvés desde el panel |
+| Pagos | La sincronización y el panel. Imputación: **Cuota**, **Deuda anterior**, **Otro de la caja** (suman), **No es de la caja**, **Por clasificar** y **Anulado** (no suman). Los anulados quedan tachados |
+| Gastos | La sincronización (cancha) y el panel. Un gasto anulado queda con tipo **Anulado**, tachado |
+| Integrantes | El panel. Columna K: fecha de alta. Columna L: último mes (baja). Varios CUIT en una celda, separados por coma |
+| Valores | El panel. Cada fila cambia la cuota, la cancha o las dos desde ese mes |
+| Cuotas y Resumen | **La app**: se reescriben solas al sincronizar o al usar el panel |
+| Por revisar | La sincronización. Se resuelve desde el panel |
 
 Cómo se calcula (DISENO.md, decisiones 10 a 12, 22 y 25):
 
@@ -76,11 +85,12 @@ Cómo se calcula (DISENO.md, decisiones 10 a 12, 22 y 25):
 |---|---|
 | Transferencia de un integrante reconocido, múltiplo de la cuota | Pagos como "Cuota" |
 | Transferencia de un integrante reconocido, otro monto | Pagos como "Por clasificar" (no suma hasta que la clasifiques) |
-| Transferencia sin reconocer (hasta 6 cuotas) o desde un banco | Por revisar |
+| Transferencia sin reconocer (hasta 6 cuotas) o desde un banco | Por revisar. Si hay un pago del mismo monto cargado sin N° de Mercado Pago (un día de diferencia como máximo), avisa "Posible duplicado" |
 | Transferencia al club por el costo de la cancha (hasta 10% más) | Gastos como "Cancha" |
 | Devolución de un pago ya cargado | Aviso en Por revisar |
 
 - Reconoce a cada integrante por su ID de Mercado Pago o su CUIT.
+- Busca desde el inicio de la temporada. La primera vez revisa todo; después, desde 2 días antes de la última búsqueda. Config B33 ("Importar pagos desde") ya no se usa.
 - Cada pago se procesa una sola vez (hoja oculta `_procesados`: no la borres).
 - Las filas automáticas quedan en negro; las cargadas a mano o desde el panel, en azul.
 
@@ -94,13 +104,13 @@ Cómo se calcula (DISENO.md, decisiones 10 a 12, 22 y 25):
 
 ## Límites conocidos
 
-- **Transferencias desde bancos:** Mercado Pago no informa quién las envía. Van a Por revisar y las asignás.
-- **Demora:** los pagos aparecen con hasta 30 minutos de demora. Los cambios a mano en la planilla, en hasta 5 minutos en la app.
+- **Transferencias desde bancos:** Mercado Pago no informa quién las envía. Van a Por revisar y las asignás, o tocás "Es el mismo" si ya estaban cargadas desde el comprobante.
+- **Demora:** los pagos aparecen con hasta 30 minutos de demora, o en el momento con "Buscar transferencias ahora".
 - **Clave vencida:** si Mercado Pago la renueva, el resultado en Config dice "rechazó la clave (401)". Guardá la nueva desde el menú.
 
 ## Pruebas
 
-`test/` simula Google Sheets, Drive y la API de Mercado Pago (188 casos):
+`test/` simula Google Sheets, Drive y la API de Mercado Pago (258 casos):
 
 ```
 TZ=America/Argentina/San_Juan node apps-script/test/run.js

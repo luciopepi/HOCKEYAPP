@@ -78,7 +78,7 @@ function datosApp_() {
     })),
     valores: tablaValores_(d.valores).map(v => ({ desde: v.texto, cuota: v.cuota, cancha: v.cancha })),
     porMes: est.porMes.slice().reverse().map(p => ({ mes: nombreMes_(p.mes), cuotas: p.cuotas, otros: p.otros })),
-    gastos: d.gastos.slice().sort((a, b) => b.fecha - a.fecha).slice(0, 30).map(g => ({
+    gastos: d.gastos.filter(g => !g.anulado).sort((a, b) => b.fecha - a.fecha).slice(0, 30).map(g => ({
       fecha: fechaCorta_(g.fecha), concepto: g.concepto || g.tipo, tipo: g.tipo, destinatario: sinCuentas_(g.destinatario), monto: g.monto,
     })),
   };
@@ -121,8 +121,8 @@ function porRevisar_(ss) {
   v.forEach((f, i) => {
     const op = normalizarOp_(f[COL_REVISAR.OPERACION - 1]);
     if (String(f[2]) !== 'Ingreso' || !op) return;
-    lista.push({ fila: i + 2, op: op, fecha: t[i][0], monto: Number(f[1]) || 0, medio: String(f[3]),
-      nombre: String(f[4]), cuit: soloDigitos_(f[5]), payerId: normalizarOp_(f[6]), motivo: String(f[8]) });
+    lista.push({ fila: i + 2, op: op, fecha: t[i][0], cuando: f[0] instanceof Date ? f[0] : null, monto: Number(f[1]) || 0,
+      medio: String(f[3]), nombre: String(f[4]), cuit: soloDigitos_(f[5]), payerId: normalizarOp_(f[6]), motivo: String(f[8]) });
   });
   return lista;
 }
@@ -159,12 +159,23 @@ function definirPin() {
     ui.alert('El PIN tiene que tener de 6 a 12 números. No se guardó.');
     return;
   }
+  guardarPin_(PropertiesService.getScriptProperties(), pin);
+  ui.alert('PIN guardado. En la app, tocá "Administrar" al pie de la pantalla.');
+}
+
+function guardarPin_(props, pin) {
   const sal = Utilities.getUuid();
-  const props = PropertiesService.getScriptProperties();
   props.setProperty(PIN_PROP, sal + ':' + hashPin_(sal, pin));
   props.deleteProperty(FALLOS_PROP);
   props.deleteProperty(TOKENS_PROP); // un PIN nuevo cierra la sesión de los celulares recordados
-  ui.alert('PIN guardado. En la app, tocá "Administrar" al pie de la pantalla.');
+}
+
+/** Código para un celular que eligió "Recordar". Se guarda solo su hash. */
+function nuevoCelular_(props) {
+  const token = 't:' + (Utilities.getUuid() + Utilities.getUuid()).replace(/-/g, '').toLowerCase();
+  const lista = celulares_(props).concat([{ h: hashPin_('celular', token), desde: fechaTexto_(new Date()) }]);
+  props.setProperty(TOKENS_PROP, JSON.stringify(lista.slice(-MAX_CELULARES)));
+  return token;
 }
 
 function hashPin_(sal, pin) {
@@ -226,7 +237,7 @@ function conLock_(fn) {
   }
 }
 
-/** Todo lo que muestra el panel. Nunca CUIT ni IDs de cuentas. */
+/** Todo lo que muestra el panel. Nunca CUIT ni IDs de cuentas: esos van solo en el detalle de un integrante, para editarlos. */
 function adminDatos_() {
   const ss = SpreadsheetApp.getActive();
   asegurarEstructura_(ss);
@@ -244,6 +255,17 @@ function adminDatos_() {
   };
   let url = '';
   try { url = ScriptApp.getService().getUrl() || ''; } catch (e) { url = ''; }
+  const cfg = hoja_(ss, HOJA.CONFIG);
+  const usados = new Set();
+  const revisar = porRevisar_(ss).map(x => {
+    const dup = x.cuando ? posibleDuplicado_(d.pagos, x.monto, x.cuando, usados) : null;
+    if (dup) usados.add(dup.fila);
+    return {
+      op: x.op, fecha: x.fecha, monto: x.monto, medio: x.medio, nombre: x.nombre, motivo: x.motivo,
+      banco: !x.cuit && !x.payerId,
+      duplicado: dup ? { fila: dup.fila, apodo: dup.apodo, monto: dup.monto, fecha: fechaCorta_(dup.fecha) } : null,
+    };
+  });
 
   return {
     hoy: Utilities.formatDate(new Date(), ZONA, 'yyyy-MM-dd'),
@@ -251,10 +273,7 @@ function adminDatos_() {
     cuotaMes: est.cuotaMes,
     canchaMes: est.cancha.costo,
     url: url,
-    porRevisar: porRevisar_(ss).reverse().slice(0, 50).map(x => ({
-      op: x.op, fecha: x.fecha, monto: x.monto, medio: x.medio, nombre: x.nombre, motivo: x.motivo,
-      banco: !x.cuit && !x.payerId,
-    })),
+    porRevisar: revisar.reverse().slice(0, 50),
     porClasificar: d.pagos.filter(p => p.imputacion === IMP.CLASIFICAR).reverse().map(p => ({
       fila: p.fila, apodo: p.apodo, fecha: fechaLarga_(p.fecha), monto: p.monto, medio: p.medio,
     })),
@@ -267,10 +286,45 @@ function adminDatos_() {
       };
     }),
     valores: tablaValores_(d.valores),
+    filasValores: filasValores_(ss).map(v => ({ fila: v.fila, clave: claveMes_(v.desde), texto: nombreMes_(v.desde),
+      cuota: v.cuota, cancha: v.cancha })),
     mesActual: claveMes_(est.mesActual),
     mesesBaja: mesesSel(-3, 12),
     mesesValor: mesesSel(0, 12),
+    mesesTemporada: mesesSel(-120, 12),
+    pagos: d.pagos.slice().sort((a, b) => b.fecha - a.fecha || b.fila - a.fila).slice(0, 300).map(pagoAdmin_),
+    gastos: d.gastos.slice().sort((a, b) => b.fecha - a.fecha || b.fila - a.fila).slice(0, 100).map(gastoAdmin_),
+    config: {
+      saldoInicial: d.saldoInicial,
+      alias: cfg.getRange(CELDA.ALIAS).getDisplayValue(),
+      vence: Number(cfg.getRange(CELDA.VENCIMIENTO).getValue()) || 10,
+    },
   };
+}
+
+function isoDia_(d) {
+  return Utilities.formatDate(d, ZONA, 'yyyy-MM-dd');
+}
+
+function pagoAdmin_(p) {
+  return { fila: p.fila, fecha: fechaLarga_(p.fecha), iso: isoDia_(p.fecha), apodo: p.apodo, monto: p.monto,
+    imputacion: p.imputacion, medio: p.medio, bloqueado: pagoBloqueado_(p.op, p.notas), notas: p.notas.slice(0, 500) };
+}
+
+function gastoAdmin_(g) {
+  return { fila: g.fila, fecha: fechaLarga_(g.fecha), iso: isoDia_(g.fecha), tipo: g.tipo, concepto: g.concepto,
+    monto: g.monto, destinatario: g.destinatario, anulado: g.anulado, bloqueado: gastoBloqueado_(g.op, g.notas),
+    notas: g.notas.slice(0, 500) };
+}
+
+/** Lo que vino de Mercado Pago no cambia de monto ni de fecha (decisiones 31 y 36). */
+function pagoBloqueado_(op, notas) {
+  const n = String(notas || '');
+  return esOpMercadoPago_(op) || n.indexOf(NOTA_AUTO) === 0 || n.indexOf(NOTA_ASIGNADA) === 0;
+}
+
+function gastoBloqueado_(op, notas) {
+  return esOpMercadoPago_(op) || String(notas || '').indexOf(NOTA_AUTO) === 0;
 }
 
 function respuestaAdmin_(mensaje, extra) {
@@ -286,12 +340,7 @@ function adminEntrar(cred, recordar) {
   const datos = adminDatos_();
   if (!/^t:/.test(String(cred))) {
     props.deleteProperty(FALLOS_PROP);
-    if (recordar) {
-      const token = 't:' + (Utilities.getUuid() + Utilities.getUuid()).replace(/-/g, '').toLowerCase();
-      const lista = celulares_(props).concat([{ h: hashPin_('celular', token), desde: fechaTexto_(new Date()) }]);
-      props.setProperty(TOKENS_PROP, JSON.stringify(lista.slice(-MAX_CELULARES)));
-      datos.token = token;
-    }
+    if (recordar) datos.token = nuevoCelular_(props);
   }
   return datos;
 }
@@ -306,6 +355,49 @@ function adminSalir(cred) {
   return true;
 }
 
+/** Saldo inicial, alias y día de vencimiento de la cancha (decisión 38). */
+function adminConfig(pin, d) {
+  verificarPin_(pin);
+  d = d || {};
+  return conLock_(() => {
+    const cfg = hoja_(SpreadsheetApp.getActive(), HOJA.CONFIG);
+    const saldo = Math.round(Number(String(d.saldoInicial == null ? '' : d.saldoInicial).replace(/\./g, '').replace(',', '.')) * 100) / 100;
+    if (String(d.saldoInicial).trim() === '' || !(saldo >= 0 && saldo <= MONTO_MAXIMO_APP)) throw new Error('Revisá el saldo inicial.');
+    const alias = textoLibre_(d.alias, 40);
+    if (alias && !/^[A-Za-z0-9.\-]{3,40}$/.test(alias)) throw new Error('El alias lleva letras, números, puntos o guiones.');
+    const dia = Number(d.vence);
+    if (!(Number.isInteger(dia) && dia >= 1 && dia <= 28)) throw new Error('El día de vencimiento va del 1 al 28.');
+    cfg.getRange(CELDA.SALDO_INICIAL).setValue(saldo);
+    cfg.getRange(CELDA.ALIAS).setNumberFormat('@').setValue(alias);
+    cfg.getRange(CELDA.VENCIMIENTO).setNumberFormat('0').setValue(dia);
+    return respuestaAdmin_('Listo: configuración guardada.');
+  });
+}
+
+/**
+ * Cambia el PIN. Pide el PIN actual aunque se haya entrado con un celular recordado.
+ * Los demás celulares recordados tienen que volver a entrar.
+ */
+function adminCambiarPin(cred, actual, nuevo, recordar) {
+  verificarPin_(cred);
+  const a = String(actual == null ? '' : actual).trim();
+  if (!/^\d{6,12}$/.test(a)) throw new Error('Escribí tu PIN actual.');
+  try {
+    verificarPin_(a);
+  } catch (e) {
+    // Otro texto que "PIN incorrecto": la app no tiene que cerrar el panel por esto.
+    throw new Error(/PIN incorrecto/.test(e.message) ? 'El PIN actual no es correcto.' : e.message);
+  }
+  const n = String(nuevo == null ? '' : nuevo).trim();
+  if (!/^\d{6,12}$/.test(n)) throw new Error('El PIN nuevo tiene que tener de 6 a 12 números.');
+  const props = PropertiesService.getScriptProperties();
+  guardarPin_(props, n);
+  return {
+    mensaje: 'Listo: PIN cambiado. Los otros celulares recordados tienen que volver a entrar.',
+    token: recordar ? nuevoCelular_(props) : '',
+  };
+}
+
 /** Detalle de un integrante: meses con lo que falta y sus pagos, para reclasificar. */
 function adminIntegrante(pin, apodo) {
   verificarPin_(pin);
@@ -314,13 +406,18 @@ function adminIntegrante(pin, apodo) {
   const est = calcularEstado_(d);
   const x = est.integrantes.find(i => i.apodo === String(apodo == null ? '' : apodo).trim());
   if (!x) throw new Error('No encuentro ese integrante.');
+  const m = d.miembros.find(i => i.apodo === x.apodo);
   return {
     apodo: x.apodo, deuda: x.deuda, adelantado: x.adelantado, pagado: x.pagado, auto: x.auto,
+    baja: x.baja ? nombreMes_(x.baja) : '',
     meses: x.estados.map((s, i) => ({ mes: nombreMes_(est.meses[i]), e: s.e, medio: s.medio, falta: s.falta }))
       .filter((s, i) => est.meses[i] <= est.mesActual && s.e !== 'nojuega'),
-    pagos: d.pagos.filter(p => p.apodo === x.apodo).sort((a, b) => b.fecha - a.fecha).map(p => ({
-      fila: p.fila, fecha: fechaLarga_(p.fecha), monto: p.monto, imputacion: p.imputacion, medio: p.medio,
-    })),
+    pagos: d.pagos.filter(p => p.apodo === x.apodo).sort((a, b) => b.fecha - a.fecha || b.fila - a.fila).map(pagoAdmin_),
+    datos: {
+      nombre: m.nombre, apellido: m.apellido, cuits: m.cuits.join(', '), cvus: m.cvus,
+      cuentasMp: m.ids.map(id => ({ id: id, fin: id.slice(-4) })),
+      alta: m.alta ? isoDia_(m.alta) : '',
+    },
   };
 }
 
@@ -364,6 +461,85 @@ function adminClasificar(pin, fila, imputacion, esperado) {
     }
     h.getRange(f, 4).setValue(imputacion);
     return respuestaAdmin_('Listo: pago de ' + v[1] + ' por ' + pesos_(v[2]) + ' marcado como "' + imputacion + '".');
+  });
+}
+
+/** Lee una fila de Pagos y verifica que siga siendo el pago que se ve en el panel. */
+function filaPago_(h, fila, esperado) {
+  const f = Number(fila);
+  if (!(Number.isInteger(f) && f >= 2 && f <= h.getLastRow())) throw new Error('Ese pago ya no está. Actualizá la lista.');
+  const v = h.getRange(f, 1, 1, COL_PAGOS.TOTAL).getValues()[0];
+  esperado = esperado || {};
+  if (String(v[1]).trim() !== String(esperado.apodo) || Number(v[2]) !== Number(esperado.monto)) {
+    throw new Error('La planilla cambió. Actualizá la lista y probá de nuevo.');
+  }
+  return { f: f, v: v };
+}
+
+/** Suma una línea a las notas: qué se cambió y cuándo. */
+function notaCambio_(notas, texto) {
+  const previa = String(notas == null ? '' : notas).trim();
+  const linea = texto + ' (' + Utilities.formatDate(new Date(), ZONA, 'dd/MM/yyyy') + ', desde la app)';
+  return texto_((previa ? previa + ' | ' : '') + linea).slice(0, 2000);
+}
+
+/**
+ * Corrige un pago (decisión 31). Lo que tiene N° de operación de Mercado Pago
+ * no cambia de monto ni de fecha. Un pago anulado se restaura eligiendo su imputación.
+ */
+function adminEditarPago(pin, fila, esperado, d) {
+  verificarPin_(pin);
+  d = d || {};
+  return conLock_(() => {
+    const ss = SpreadsheetApp.getActive();
+    const h = hoja_(ss, HOJA.PAGOS);
+    const { f, v } = filaPago_(h, fila, esperado);
+    const antes = { apodo: String(v[1]).trim(), monto: Number(v[2]), imp: imputacion_(v[3]),
+      fecha: v[0] instanceof Date ? soloDia_(v[0]) : null };
+    const bloqueado = pagoBloqueado_(normalizarOp_(v[COL_PAGOS.OPERACION - 1]), v[COL_PAGOS.TOTAL - 1]);
+    const m = miembroPorApodo_(leerMiembros_(hoja_(ss, HOJA.INTEGRANTES)), d.apodo);
+    const validas = [IMP.CUOTA, IMP.DEUDA_ANTERIOR, IMP.OTRO_CAJA, IMP.NO_CAJA]
+      .concat(antes.imp === IMP.CLASIFICAR ? [IMP.CLASIFICAR] : []);
+    if (validas.indexOf(d.imputacion) === -1) throw new Error('Elegí a qué corresponde el pago.');
+    const monto = bloqueado ? antes.monto : montoValido_(d.monto);
+    const fecha = bloqueado ? antes.fecha : fechaApp_(d.fecha);
+    const nota = textoLibre_(d.nota, 200);
+
+    const cambios = [];
+    if (m.apodo !== antes.apodo) cambios.push('integrante ' + antes.apodo + ' → ' + m.apodo);
+    if (!antes.fecha || fecha.getTime() !== antes.fecha.getTime()) {
+      cambios.push('fecha ' + fechaLarga_(antes.fecha) + ' → ' + fechaLarga_(fecha));
+    }
+    if (monto !== antes.monto) cambios.push('monto ' + pesos_(antes.monto) + ' → ' + pesos_(monto));
+    if (d.imputacion !== antes.imp) {
+      cambios.push(antes.imp === IMP.ANULADO ? 'restaurado como ' + d.imputacion : antes.imp + ' → ' + d.imputacion);
+    }
+    if (!cambios.length && !nota) throw new Error('No cambiaste nada.');
+
+    h.getRange(f, 1).setNumberFormat('dd/mm/yyyy');
+    h.getRange(f, 1, 1, 4).setValues([[fecha, m.apodo, monto, d.imputacion]]);
+    let notas = v[COL_PAGOS.TOTAL - 1];
+    if (cambios.length) notas = notaCambio_(notas, 'Corregido: ' + cambios.join(', '));
+    if (nota) notas = notaCambio_(notas, 'Nota: ' + nota);
+    h.getRange(f, COL_PAGOS.TOTAL).setValue(notas);
+    if (antes.imp === IMP.ANULADO) h.getRange(f, 1, 1, COL_PAGOS.TOTAL).setFontLine('none');
+    return respuestaAdmin_(antes.imp === IMP.ANULADO ? 'Listo: pago restaurado como "' + d.imputacion + '".'
+      : 'Listo: pago de ' + m.apodo + ' guardado.');
+  });
+}
+
+/** Anula un pago: deja de sumar y queda en la planilla, tachado (decisión 31). */
+function adminAnularPago(pin, fila, esperado) {
+  verificarPin_(pin);
+  return conLock_(() => {
+    const h = hoja_(SpreadsheetApp.getActive(), HOJA.PAGOS);
+    const { f, v } = filaPago_(h, fila, esperado);
+    const imp = imputacion_(v[3]);
+    if (imp === IMP.ANULADO) throw new Error('Ese pago ya está anulado.');
+    h.getRange(f, 4).setValue(IMP.ANULADO);
+    h.getRange(f, COL_PAGOS.TOTAL).setValue(notaCambio_(v[COL_PAGOS.TOTAL - 1], 'Anulado (era ' + imp + ')'));
+    h.getRange(f, 1, 1, COL_PAGOS.TOTAL).setFontLine('line-through');
+    return respuestaAdmin_('Listo: pago de ' + String(v[1]).trim() + ' por ' + pesos_(v[2]) + ' anulado. Ya no suma.');
   });
 }
 
@@ -428,6 +604,45 @@ function adminDescartar(pin, op) {
     hoja_(ss, HOJA.REVISAR).deleteRow(x.fila);
     return respuestaAdmin_('Listo: transferencia de ' + pesos_(x.monto) + ' marcada como que no es de la caja.');
   });
+}
+
+/**
+ * La transferencia de "Por revisar" es un pago que ya estaba cargado (por ejemplo,
+ * con el número del comprobante del banco). El pago queda con el N° de Mercado Pago
+ * y no se suma dos veces (decisión 32).
+ */
+function adminEsElMismo(pin, op, fila, esperado) {
+  verificarPin_(pin);
+  return conLock_(() => {
+    const ss = SpreadsheetApp.getActive();
+    const x = porRevisar_(ss).find(y => y.op === normalizarOp_(op));
+    if (!x) throw new Error('Esa transferencia ya no está en Por revisar. Actualizá la lista.');
+    const hPagos = hoja_(ss, HOJA.PAGOS);
+    const { f, v } = filaPago_(hPagos, fila, esperado);
+    if (Number(v[2]) !== x.monto) throw new Error('Los montos no coinciden.');
+    if (imputacion_(v[3]) === IMP.ANULADO) throw new Error('Ese pago está anulado.');
+    const opViejo = normalizarOp_(v[COL_PAGOS.OPERACION - 1]);
+    if (esOpMercadoPago_(opViejo)) throw new Error('Ese pago ya tiene un N° de operación de Mercado Pago.');
+    hPagos.getRange(f, COL_PAGOS.OPERACION).setNumberFormat('@').setValue(x.op);
+    hPagos.getRange(f, COL_PAGOS.TOTAL).setValue(notaCambio_(v[COL_PAGOS.TOTAL - 1],
+      'Es la transferencia de Mercado Pago op. ' + x.op + (opViejo ? '; N° del comprobante: ' + opViejo : '')));
+
+    const hInt = hoja_(ss, HOJA.INTEGRANTES);
+    const miembros = leerMiembros_(hInt);
+    const m = miembros.find(y => y.apodo === String(v[1]).trim());
+    const aprendio = m ? aprenderCuenta_(hInt, miembros, m, x.cuit, x.payerId) : false;
+    hoja_(ss, HOJA.REVISAR).deleteRow(x.fila);
+    return respuestaAdmin_('Listo: era el pago de ' + String(v[1]).trim() + ' que ya estaba cargado. No se suma dos veces.' +
+      (aprendio ? ' Guardé su cuenta: los próximos pagos desde ahí se cargan solos.' : ''));
+  });
+}
+
+/** "Buscar transferencias ahora" del panel (decisión 33). */
+function adminSincronizar(pin) {
+  verificarPin_(pin);
+  const texto = sincronizar_();
+  if (!texto) throw new Error('Ya hay una búsqueda en curso. Probá de nuevo en un minuto.');
+  return respuestaAdmin_('Búsqueda lista: ' + texto + '.');
 }
 
 /** Suma el CUIT y el ID de Mercado Pago a la fila del integrante, si nadie más los tiene. */
@@ -501,35 +716,164 @@ function adminBaja(pin, apodo, ultimo) {
 }
 
 /**
- * Qué cambiaría con un valor nuevo, sin guardarlo: quiénes tienen ese mes pagado
- * por adelantado y pasarían a deber la diferencia, y cuántas cuotas cubren la cancha.
+ * Datos de un integrante (decisión 37). Si cambia el apodo, también se cambia en sus pagos.
+ * Las cuentas de Mercado Pago reconocidas solo se pueden quitar: se aprenden al asignar.
+ */
+function adminEditarIntegrante(pin, apodoActual, d) {
+  verificarPin_(pin);
+  d = d || {};
+  return conLock_(() => {
+    const ss = SpreadsheetApp.getActive();
+    const hInt = hoja_(ss, HOJA.INTEGRANTES);
+    const miembros = leerMiembros_(hInt);
+    const m = miembroPorApodo_(miembros, apodoActual);
+    const apodo = textoLibre_(d.apodo, 30);
+    if (!/^[\p{L}\d][\p{L}\d .'-]*$/u.test(apodo)) throw new Error('Escribí un apodo con letras o números.');
+    if (miembros.some(x => x !== m && x.apodo.toLowerCase() === apodo.toLowerCase())) {
+      throw new Error('Ya hay otro integrante con ese apodo.');
+    }
+    const cuits = [];
+    String(d.cuits == null ? '' : d.cuits).split(/[,;\n]+/).map(soloDigitos_).filter(Boolean).forEach(c => {
+      if (c.length !== 11) throw new Error('Cada CUIT tiene que tener 11 números.');
+      const otro = miembros.find(x => x !== m && x.cuits.indexOf(c) !== -1);
+      if (otro) throw new Error('El CUIT ' + c + ' ya está cargado para ' + otro.apodo + '.');
+      if (cuits.indexOf(c) === -1) cuits.push(c);
+    });
+    const cvus = String(d.cvus == null ? '' : d.cvus).split(/[,;\n]+/).map(t => textoLibre_(t, 60)).filter(Boolean);
+    const mantener = (Array.isArray(d.cuentasMp) ? d.cuentasMp : []).map(normalizarOp_);
+    const ids = m.ids.filter(id => mantener.indexOf(id) !== -1);
+    const alta = String(d.alta || '').trim() ? fechaApp_(d.alta, true) : '';
+    if (alta && m.ultimoMes && primerDia_(alta) > primerDia_(m.ultimoMes)) {
+      throw new Error('La fecha de alta no puede ser después del último mes que juega.');
+    }
+
+    hInt.getRange(m.fila, COL_INT.APODO, 1, 3).setValues([[apodo, texto_(textoLibre_(d.nombre, 40)),
+      texto_(textoLibre_(d.apellido, 40))]]);
+    hInt.getRange(m.fila, COL_INT.CUIT, 1, 2).setNumberFormat('@').setValues([[cuits.join(', '), texto_(cvus.join(', '))]]);
+    hInt.getRange(m.fila, COL_INT.ID_MP).setNumberFormat('@').setValue(ids.join(', '));
+    hInt.getRange(m.fila, COL_INT.ALTA).setNumberFormat('dd/mm/yyyy').setValue(alta);
+
+    let renombrados = 0;
+    if (apodo !== m.apodo) {
+      const hPagos = hoja_(ss, HOJA.PAGOS);
+      const n = hPagos.getLastRow() - 1;
+      if (n > 0) {
+        const col = hPagos.getRange(2, COL_PAGOS.INTEGRANTE, n, 1).getValues();
+        col.forEach(f => { if (String(f[0]).trim() === m.apodo) { f[0] = apodo; renombrados++; } });
+        if (renombrados) hPagos.getRange(2, COL_PAGOS.INTEGRANTE, n, 1).setValues(col);
+      }
+    }
+    return respuestaAdmin_('Listo: datos de ' + apodo + ' guardados.' +
+      (renombrados ? ' El apodo nuevo quedó en ' + (renombrados === 1 ? 'su pago.' : 'sus ' + renombrados + ' pagos.') : ''),
+      { apodo: apodo });
+  });
+}
+
+/**
+ * Qué cambiaría, sin guardarlo (decisión 35): quién tiene que pagar más o menos y
+ * cuántas cuotas cubren la cancha. d.modo: "nuevo" (tipo, monto, desde),
+ * "editar" (fila, esperado, desde, cuota, cancha) o "borrar" (fila, esperado).
  */
 function adminSimularValor(pin, d) {
   verificarPin_(pin);
   const ss = SpreadsheetApp.getActive();
   const datos = leerDatos_(ss);
-  const nuevo = valorNuevo_(d, datos.inicio);
-  const valores = conValor_(datos.valores, nuevo);
-  const afectados = [];
-  if (nuevo.tipo === 'cuota') {
-    // Meses desde "vigente desde" que cada uno ya tiene pagados: la diferencia de precio de esos meses.
-    const a = calcularEstado_(datos);
-    const b = calcularEstado_(Object.assign({}, datos, { valores: valores }));
-    a.integrantes.forEach((x, k) => {
-      if (x.auto) return;
-      let dif = 0;
-      x.estados.forEach((s, i) => {
-        if (a.meses[i] >= nuevo.desde && s.e === 'pagado') dif += b.integrantes[k].estados[i].c - s.c;
-      });
-      if (dif > 0) afectados.push({ apodo: x.apodo, diferencia: dif });
-    });
-  }
-  const cuota = valorEn_(valores, 'cuota', nuevo.desde);
+  const r = valoresSimulados_(ss, datos, d);
+  const cuota = valorEn_(r.valores, 'cuota', r.mes);
   return {
-    afectados: afectados,
-    necesarios: cuota > 0 ? Math.ceil(valorEn_(valores, 'cancha', nuevo.desde) / cuota) : 0,
-    desde: nombreMes_(nuevo.desde),
+    afectados: impactoValores_(datos, r.valores),
+    necesarios: cuota > 0 ? Math.ceil(valorEn_(r.valores, 'cancha', r.mes) / cuota) : 0,
+    desde: nombreMes_(r.mes),
   };
+}
+
+function valoresSimulados_(ss, datos, d) {
+  d = d || {};
+  if (d.modo === 'editar' || d.modo === 'borrar') {
+    const r = valoresConCambio_(filasValores_(ss), d, datos.inicio);
+    return { valores: r.valores, mes: r.mes };
+  }
+  const nuevo = valorNuevo_(d, datos.inicio);
+  return { valores: conValor_(datos.valores, nuevo), mes: nuevo.desde };
+}
+
+/**
+ * Valores con una fila corregida o borrada, sin guardarlos. Desde el inicio de la
+ * temporada siempre tiene que haber una cuota y una cancha.
+ */
+function valoresConCambio_(filas, d, inicio) {
+  const copia = filas.map(v => Object.assign({}, v));
+  const i = copia.findIndex(v => v.fila === Number(d.fila));
+  if (i === -1 || claveMes_(copia[i].desde) !== String(d.esperado)) {
+    throw new Error('La hoja Valores cambió. Actualizá la lista y probá de nuevo.');
+  }
+  let mes = copia[i].desde;
+  if (d.modo === 'borrar') {
+    copia.splice(i, 1);
+  } else {
+    mes = mesApp_(d.desde);
+    if (mes < inicio) throw new Error('El mes tiene que ser desde el inicio de la temporada.');
+    if (copia.some((v, k) => k !== i && v.desde.getTime() === mes.getTime())) {
+      throw new Error('Ya hay un valor para ' + nombreMes_(mes) + ': corregí ese.');
+    }
+    const monto = v => (String(v == null ? '' : v).trim() === '' ? null : montoValido_(v));
+    const cuota = monto(d.cuota);
+    const cancha = monto(d.cancha);
+    if (cuota == null && cancha == null) throw new Error('Completá la cuota, la cancha o las dos. Para sacarlo, usá Borrar.');
+    copia[i] = { fila: copia[i].fila, desde: mes, cuota: cuota, cancha: cancha };
+  }
+  copia.sort((a, b) => a.desde - b.desde);
+  if (!(valorEn_(copia, 'cuota', inicio) > 0 && valorEn_(copia, 'cancha', inicio) > 0)) {
+    throw new Error('Desde ' + nombreMes_(inicio) + ' (inicio de la temporada) tiene que haber una cuota y una cancha.');
+  }
+  return { valores: copia, mes: mes, fila: Number(d.fila) };
+}
+
+/**
+ * Cuánto más (o menos) tiene que pagar cada uno con otros valores: la diferencia de
+ * precio de los meses hasta el actual y de los que ya tiene pagados por adelantado.
+ */
+function impactoValores_(datos, valores) {
+  const a = calcularEstado_(datos);
+  const b = calcularEstado_(Object.assign({}, datos, { valores: valores }));
+  const lista = [];
+  a.integrantes.forEach((x, k) => {
+    if (x.auto) return;
+    let hasta = a.idxActual;
+    x.estados.forEach((s, i) => { if (s.e === 'pagado' && i > hasta) hasta = i; });
+    let dif = 0;
+    for (let i = 0; i <= hasta && i < x.estados.length; i++) dif += b.integrantes[k].estados[i].c - x.estados[i].c;
+    if (dif) lista.push({ apodo: x.apodo, diferencia: dif });
+  });
+  return lista;
+}
+
+/** Corrige una fila de Valores (mes, cuota o cancha). Una celda vacía sigue el valor anterior. */
+function adminEditarValor(pin, d) {
+  verificarPin_(pin);
+  return conLock_(() => {
+    const ss = SpreadsheetApp.getActive();
+    const datos = leerDatos_(ss);
+    const r = valoresConCambio_(filasValores_(ss), Object.assign({}, d, { modo: 'editar' }), datos.inicio);
+    const v = r.valores.find(x => x.fila === r.fila);
+    const h = hojaValores_(ss);
+    h.getRange(r.fila, 1).setNumberFormat('mmm yyyy');
+    h.getRange(r.fila, 2, 1, 2).setNumberFormat('"$"#,##0');
+    h.getRange(r.fila, 1, 1, 3).setValues([[v.desde, v.cuota == null ? '' : v.cuota, v.cancha == null ? '' : v.cancha]])
+      .setFontColor(COLOR_MANUAL);
+    return respuestaAdmin_('Listo: valor desde ' + nombreMes_(v.desde) + ' corregido.');
+  });
+}
+
+function adminBorrarValor(pin, d) {
+  verificarPin_(pin);
+  return conLock_(() => {
+    const ss = SpreadsheetApp.getActive();
+    const datos = leerDatos_(ss);
+    const r = valoresConCambio_(filasValores_(ss), Object.assign({}, d, { modo: 'borrar' }), datos.inicio);
+    hojaValores_(ss).deleteRow(r.fila);
+    return respuestaAdmin_('Listo: valor desde ' + nombreMes_(r.mes) + ' borrado.');
+  });
 }
 
 /** Guarda un valor nuevo de cuota o cancha "vigente desde" un mes. */
@@ -632,13 +976,79 @@ function adminGuardarGasto(pin, d) {
     const r = resumenGasto_(pago, String(miUsuario_().id));
     const destinatario = textoLibre_(d.destinatario, 80) || r.destinatario;
     const archivo = /^[\w-]{10,}$/.test(String(d.archivoId || '')) ? 'https://drive.google.com/file/d/' + d.archivoId : '';
-    const saleDe = d.tipo === 'Cancha' ? 'Cuotas del mes' : d.tipo === 'Equipamiento' ? 'Fondo equipamiento' : 'Caja';
-    agregarFilas_(hGastos, [[soloDia_(fechaPago_(pago)), d.tipo, texto_(concepto), r.monto, saleDe, texto_(destinatario), id,
+    agregarFilas_(hGastos, [[soloDia_(fechaPago_(pago)), d.tipo, texto_(concepto), r.monto, saleDe_(d.tipo), texto_(destinatario), id,
       NOTA_APP + (archivo ? '. Comprobante: ' + archivo : '')]], COL_GASTOS.TOTAL, [7], COLOR_MANUAL);
     const proc = registroProcesados_(ss);
     proc.marcar(id);
     proc.guardar();
     return respuestaAdmin_('Listo: gasto de ' + pesos_(r.monto) + ' (' + concepto + ') guardado.');
+  });
+}
+
+function saleDe_(tipo) {
+  return tipo === 'Cancha' ? 'Cuotas del mes' : tipo === 'Equipamiento' ? 'Fondo equipamiento' : 'Caja';
+}
+
+/** Lee una fila de Gastos y verifica que siga siendo el gasto que se ve en el panel. */
+function filaGasto_(h, fila, esperado) {
+  const f = Number(fila);
+  if (!(Number.isInteger(f) && f >= 2 && f <= h.getLastRow())) throw new Error('Ese gasto ya no está. Actualizá la lista.');
+  const v = h.getRange(f, 1, 1, COL_GASTOS.TOTAL).getValues()[0];
+  esperado = esperado || {};
+  if (Number(v[3]) !== Number(esperado.monto) || String(v[2]).trim() !== String(esperado.concepto == null ? '' : esperado.concepto).trim()) {
+    throw new Error('La planilla cambió. Actualizá la lista y probá de nuevo.');
+  }
+  return { f: f, v: v };
+}
+
+/** Corrige un gasto (decisión 36). Lo que vino de Mercado Pago no cambia de monto ni de fecha. */
+function adminEditarGasto(pin, fila, esperado, d) {
+  verificarPin_(pin);
+  d = d || {};
+  return conLock_(() => {
+    const h = hoja_(SpreadsheetApp.getActive(), HOJA.GASTOS);
+    const { f, v } = filaGasto_(h, fila, esperado);
+    const antes = { tipo: String(v[1]).trim(), concepto: String(v[2]).trim(), monto: Number(v[3]),
+      destinatario: String(v[5]).trim(), fecha: v[0] instanceof Date ? soloDia_(v[0]) : null };
+    const bloqueado = gastoBloqueado_(normalizarOp_(v[COL_GASTOS.OPERACION - 1]), v[COL_GASTOS.TOTAL - 1]);
+    if (TIPOS_GASTO.indexOf(d.tipo) === -1) throw new Error('Elegí el tipo de gasto.');
+    const concepto = textoLibre_(d.concepto, 80);
+    if (!concepto) throw new Error('Escribí el concepto.');
+    const destinatario = textoLibre_(d.destinatario, 80);
+    const monto = bloqueado ? antes.monto : montoValido_(d.monto);
+    const fecha = bloqueado ? antes.fecha : fechaApp_(d.fecha);
+
+    const cambios = [];
+    if (antes.tipo === IMP.ANULADO) cambios.push('restaurado como ' + d.tipo);
+    else if (d.tipo !== antes.tipo) cambios.push('tipo ' + antes.tipo + ' → ' + d.tipo);
+    if (concepto !== antes.concepto) cambios.push('concepto');
+    if (destinatario !== antes.destinatario) cambios.push('destinatario');
+    if (!antes.fecha || fecha.getTime() !== antes.fecha.getTime()) {
+      cambios.push('fecha ' + fechaLarga_(antes.fecha) + ' → ' + fechaLarga_(fecha));
+    }
+    if (monto !== antes.monto) cambios.push('monto ' + pesos_(antes.monto) + ' → ' + pesos_(monto));
+    if (!cambios.length) throw new Error('No cambiaste nada.');
+
+    h.getRange(f, 1).setNumberFormat('dd/mm/yyyy');
+    h.getRange(f, 1, 1, 6).setValues([[fecha, d.tipo, texto_(concepto), monto, saleDe_(d.tipo), texto_(destinatario)]]);
+    h.getRange(f, COL_GASTOS.TOTAL).setValue(notaCambio_(v[COL_GASTOS.TOTAL - 1], 'Corregido: ' + cambios.join(', ')));
+    if (antes.tipo === IMP.ANULADO) h.getRange(f, 1, 1, COL_GASTOS.TOTAL).setFontLine('none');
+    return respuestaAdmin_(antes.tipo === IMP.ANULADO ? 'Listo: gasto restaurado.' : 'Listo: gasto guardado.');
+  });
+}
+
+/** Anula un gasto: deja de restar y queda en la planilla, tachado. */
+function adminAnularGasto(pin, fila, esperado) {
+  verificarPin_(pin);
+  return conLock_(() => {
+    const h = hoja_(SpreadsheetApp.getActive(), HOJA.GASTOS);
+    const { f, v } = filaGasto_(h, fila, esperado);
+    const tipo = String(v[1]).trim();
+    if (tipo === IMP.ANULADO) throw new Error('Ese gasto ya está anulado.');
+    h.getRange(f, COL_GASTOS.TIPO).setValue(IMP.ANULADO);
+    h.getRange(f, COL_GASTOS.TOTAL).setValue(notaCambio_(v[COL_GASTOS.TOTAL - 1], 'Anulado (era ' + tipo + ')'));
+    h.getRange(f, 1, 1, COL_GASTOS.TOTAL).setFontLine('line-through');
+    return respuestaAdmin_('Listo: gasto de ' + pesos_(v[3]) + ' anulado. Ya no resta.');
   });
 }
 

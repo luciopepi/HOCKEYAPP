@@ -7,6 +7,9 @@
  *   administrador elija Cuota o "No es de la caja").
  * - Transferencias recibidas que no se pueden reconocer van a "Por revisar",
  *   solo si el monto puede ser de una cuota (no se copian ingresos personales).
+ *   El administrador las resuelve desde el panel de la app.
+ * - Busca desde el inicio de la temporada (Config B5): la primera vez revisa
+ *   todo; después, desde 2 días antes de la última sincronización.
  * - Transferencias enviadas al club por el monto de la cancha se cargan en Gastos.
  * - Cada pago se procesa una sola vez (hoja oculta _procesados).
  *
@@ -30,7 +33,7 @@ const CELDA = {
   ALIAS: 'B7',
   VENCIMIENTO: 'B10',
   COSTOS_CANCHA: 'A16:B25', // ya no se usa: ver hoja Valores
-  IMPORTAR_DESDE: 'B33',
+  IMPORTAR_DESDE: 'B33',     // ya no se usa: se busca desde el inicio de la temporada
   ID_CLUB: 'B34',
   ULTIMA_SYNC: 'B35',
   RESULTADO: 'B36',
@@ -38,7 +41,7 @@ const CELDA = {
 
 // Columnas (empezando en 1).
 const COL_PAGOS = { FECHA: 1, INTEGRANTE: 2, MONTO: 3, OPERACION: 9, TOTAL: 10 };
-const COL_INT = { APODO: 2, CUIT: 6, AUTO: 9, ID_MP: 10, ALTA: 11, ULTIMO: 12, TOTAL: 12 };
+const COL_INT = { APODO: 2, NOMBRE: 3, APELLIDO: 4, CUIT: 6, CVU: 7, AUTO: 9, ID_MP: 10, ALTA: 11, ULTIMO: 12, TOTAL: 12 };
 const COL_GASTOS = { FECHA: 1, TIPO: 2, MONTO: 4, OPERACION: 7, TOTAL: 8 };
 const COL_REVISAR = { OPERACION: 8, TOTAL: 9 };
 
@@ -52,6 +55,7 @@ const MAX_CUOTAS_REVISAR = 6;   // ingresos no reconocidos de más de 6 cuotas n
 const MONTO_MINIMO_REVISAR = 1000;
 const TOLERANCIA_CANCHA = 1.10; // admite hasta 10% de recargo por mora
 const NOTA_AUTO = 'Cargado automáticamente desde Mercado Pago';
+const PROP_BUSQUEDA = 'BUSQUEDA_COMPLETA'; // mes de inicio ya revisado completo
 const COLOR_MANUAL = '#0000FF';
 const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio',
   'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
@@ -187,6 +191,7 @@ function sincronizar_() {
     }
     config.getRange(CELDA.ULTIMA_SYNC).setValue(inicio);
     config.getRange(CELDA.RESULTADO).setValue(texto);
+    PropertiesService.getScriptProperties().setProperty(PROP_BUSQUEDA, claveMes_(inicioBusqueda_(config)));
     return texto;
   } catch (e) {
     config.getRange(CELDA.RESULTADO).setValue('Error (' + fechaTexto_(inicio) + '): ' + e.message);
@@ -197,20 +202,25 @@ function sincronizar_() {
 }
 
 /**
- * Desde cuándo buscar: 2 días antes de la última sincronización correcta,
- * pero nunca antes de "Importar pagos desde".
+ * Desde cuándo buscar: 2 días antes de la última sincronización correcta, pero
+ * nunca antes del inicio de la temporada. La primera vez (o si cambia el inicio)
+ * revisa desde el inicio: así aparecen las transferencias que no se cargaron.
  */
 function fechaDesde_(config) {
-  const minimo = config.getRange(CELDA.IMPORTAR_DESDE).getValue();
-  if (!(minimo instanceof Date)) {
-    throw new Error('Completá "Importar pagos desde" en Config (' + CELDA.IMPORTAR_DESDE + ').');
-  }
+  const minimo = inicioBusqueda_(config);
   const ultima = config.getRange(CELDA.ULTIMA_SYNC).getValue();
-  if (ultima instanceof Date) {
+  const completa = PropertiesService.getScriptProperties().getProperty(PROP_BUSQUEDA) === claveMes_(minimo);
+  if (ultima instanceof Date && completa) {
     const conMargen = new Date(ultima.getTime() - MARGEN_DIAS * 24 * 3600 * 1000);
     return conMargen > minimo ? conMargen : minimo;
   }
   return minimo;
+}
+
+function inicioBusqueda_(config) {
+  const inicio = config.getRange(CELDA.INICIO).getValue();
+  if (!(inicio instanceof Date)) throw new Error('Falta el inicio de la temporada en Config (' + CELDA.INICIO + ').');
+  return primerDia_(inicio);
 }
 
 // ------------------------------------------------------------ recibidos
@@ -226,6 +236,8 @@ function procesarRecibidos_(ss, config, pagos, miId, desde, proc) {
   const yaVistos = operaciones_(hRev, COL_REVISAR.OPERACION);
   const yaCargados = clavesPagos_(hPagos);
   const integ = leerIntegrantes_(hInt);
+  const cargados = leerDatos_(ss).pagos;
+  const usados = new Set(); // cada pago cargado se ofrece como duplicado de una sola transferencia
 
   const filasPagos = [];
   const filasRevisar = [];
@@ -299,9 +311,13 @@ function procesarRecibidos_(ss, config, pagos, miId, desde, proc) {
         }
         proc.marcar(id);
       } else if (monto >= MONTO_MINIMO_REVISAR && esMontoPosible_(valores, fecha, monto)) {
+        const dup = posibleDuplicado_(cargados, monto, fecha, usados);
+        if (dup) usados.add(dup.fila);
         filasRevisar.push(filaRevisar_(fecha, monto, medio, nombre, cuit, esPropia ? '' : payerId, id,
-          esPropia ? 'Transferencia desde un banco: Mercado Pago no informa quién la envió.'
-                   : 'No coincide con ningún integrante.'));
+          dup ? 'Posible duplicado: ' + dup.apodo + ' tiene un pago igual del ' +
+                Utilities.formatDate(dup.fecha, ZONA, 'dd/MM') + ' cargado sin N° de Mercado Pago.'
+            : esPropia ? 'Transferencia desde un banco: Mercado Pago no informa quién la envió.'
+                       : 'No coincide con ningún integrante.'));
         proc.marcar(id);
       }
       // Otros ingresos (montos que no pueden ser cuotas) no se copian a la planilla.
@@ -329,6 +345,23 @@ function esMontoPosible_(valores, fecha, monto) {
 
 function filaRevisar_(fecha, monto, medio, nombre, cuit, payerId, id, motivo) {
   return [fecha, monto, 'Ingreso', medio, nombre, cuit, payerId, id, motivo];
+}
+
+/**
+ * Pago ya cargado que puede ser esta misma transferencia: mismo monto, un día de
+ * diferencia como máximo, no es efectivo, no está anulado y no tiene N° de
+ * operación de Mercado Pago (por ejemplo, se cargó con el número del comprobante del banco).
+ */
+function posibleDuplicado_(pagos, monto, fecha, usados) {
+  const dia = soloDia_(fecha).getTime();
+  return pagos.find(p => p.monto === monto && p.medio !== 'Efectivo' && p.imputacion !== IMP.ANULADO &&
+    !esOpMercadoPago_(p.op) && !(usados && usados.has(p.fila)) &&
+    Math.abs(soloDia_(p.fecha).getTime() - dia) <= 26 * 3600 * 1000) || null;
+}
+
+/** Los N° de operación de Mercado Pago son números largos; los de los bancos, no siempre. */
+function esOpMercadoPago_(op) {
+  return /^\d{10,}$/.test(String(op || ''));
 }
 
 // ------------------------------------------------------------- enviados
@@ -522,8 +555,7 @@ function buscarPagos_(filtro, desde, hasta, rango) {
     total = (res.paging && res.paging.total) || 0;
     if (!lote.length || offset >= total) break;
     if (offset + 50 > MAX_RESULTADOS) {
-      throw new Error('Hay ' + total + ' movimientos para revisar y solo se pueden leer ' + MAX_RESULTADOS +
-        '. Mové "Importar pagos desde" más cerca de hoy.');
+      throw new Error('Hay ' + total + ' movimientos para revisar y solo se pueden leer ' + MAX_RESULTADOS + '.');
     }
   }
   return salida;
@@ -550,8 +582,8 @@ function hojaRevisar_(ss) {
   h.getRange('A:A').setNumberFormat('dd/mm/yyyy hh:mm');
   h.getRange('B:B').setNumberFormat('"$"#,##0;("$"#,##0);"-"');
   h.getRange('E:H').setNumberFormat('@');
-  h.getRange(1, 1).setNote('Movimientos que la automatización no pudo asignar. Si es una cuota, cargala en Pagos ' +
-    'con el integrante y copiá el N° de operación. Si no, dejala acá: no se vuelve a cargar.');
+  h.getRange(1, 1).setNote('Movimientos que la automatización no pudo asignar. Se resuelven desde el panel de la app, ' +
+    'en "Para revisar". No edites esta hoja.');
   return h;
 }
 
@@ -597,6 +629,7 @@ function leerMiembros_(h) {
     if (!apodo) return;
     const ids = listaDe_(f[COL_INT.ID_MP - 1]);
     lista.push({ apodo: apodo, fila: i + 2, cuits: listaDe_(f[COL_INT.CUIT - 1]), ids: ids, idMp: ids[0] || '',
+      nombre: String(f[2]).trim(), apellido: String(f[3]).trim(), cvus: String(f[COL_INT.CVU - 1]).trim(),
       auto: String(f[COL_INT.AUTO - 1]).trim() === 'Sí',
       alta: f[COL_INT.ALTA - 1] instanceof Date ? f[COL_INT.ALTA - 1] : null,
       ultimoMes: f[COL_INT.ULTIMO - 1] instanceof Date ? f[COL_INT.ULTIMO - 1] : null });
@@ -637,7 +670,7 @@ function clavesPagos_(h) {
     const fecha = f[COL_PAGOS.FECHA - 1];
     const apodo = String(f[COL_PAGOS.INTEGRANTE - 1]).trim();
     const monto = Number(f[COL_PAGOS.MONTO - 1]) || 0;
-    if (!(fecha instanceof Date) || !apodo) return;
+    if (!(fecha instanceof Date) || !apodo || imputacion_(f[3]) === IMP.ANULADO) return;
     claves.add(claveDia_(apodo, monto, fecha));
     const op = normalizarOp_(f[COL_PAGOS.OPERACION - 1]);
     if (op) {

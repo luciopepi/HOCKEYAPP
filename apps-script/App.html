@@ -124,6 +124,9 @@
   .toast { position: fixed; left: 16px; right: 16px; bottom: calc(84px + env(safe-area-inset-bottom)); max-width: 608px; margin: 0 auto; background: var(--navy); color: #fff; border-radius: 12px; padding: 12px 14px; font-size: 14px; display: none; z-index: 10; }
   body.admin .toast { bottom: calc(20px + env(safe-area-inset-bottom)); }
   .toast.error { background: var(--naranja); }
+  .tachado { text-decoration: line-through; color: var(--gris2); }
+  .etiqueta { font-size: 12px; font-weight: 600; border-radius: 6px; padding: 2px 6px; background: #EEF1F5; color: var(--gris); }
+  .etiqueta.anulado { background: var(--naranja-claro); color: var(--naranja); }
 </style>
 </head>
 <body>
@@ -364,7 +367,7 @@ function cabeceraAdmin(titulo, sub, volverA) {
   $('cabecera').innerHTML = '<div class="marca" style="justify-content:space-between"><div class="marca"><button class="volver" id="volver" aria-label="Volver">' + ICONO_VOLVER +
     '</button><div><div class="titulo-h">' + esc(titulo) + '</div>' + (sub ? '<div class="sub">' + esc(sub) + '</div>' : '') + '</div></div>' +
     (volverA === null && ADMIN ? '<button class="volver" id="salir" style="width:auto;padding:0 12px;font:inherit;font-size:14px">Salir</button>' : '') + '</div>';
-  $('volver').onclick = () => (volverA ? ir(volverA) : mostrar('inicio'));
+  $('volver').onclick = () => (typeof volverA === 'function' ? volverA() : volverA ? ir(volverA) : mostrar('inicio'));
   if ($('salir')) $('salir').onclick = () => {
     if (/^t:/.test(pin) && window.google && google.script) google.script.run.adminSalir(pin);
     olvidarPin(); mostrar('inicio'); toast('Saliste del panel.');
@@ -405,7 +408,8 @@ function listo(volverA) {
 function ir(v, extra) {
   vista = v;
   const vistas = { inicio: vInicio, revisar: vRevisar, efectivo: vEfectivo, gasto: vGasto, integrantes: vIntegrantes,
-    integrante: vIntegrante, valores: vValores, whatsapp: vWhatsapp };
+    integrante: vIntegrante, editarIntegrante: vEditarIntegrante, valores: vValores, valor: vValor, whatsapp: vWhatsapp,
+    pagos: vPagos, pago: vPago, gastos: vGastos, gastoEditar: vGastoEditar, config: vConfig };
   (vistas[v] || vInicio)(extra);
   window.scrollTo(0, 0);
 }
@@ -421,31 +425,70 @@ function opciones(lista, elegido, vacio) {
 const apodos = () => ADMIN.integrantes.filter(m => !m.baja).map(m => m.apodo);
 // Para cargar pagos también cuentan los que se dieron de baja (pueden saldar su deuda).
 const quienes = () => ADMIN.integrantes.map(m => ({ clave: m.apodo, texto: m.apodo + (m.baja ? ' (baja)' : '') }));
+const IMPUTACIONES = ['Cuota', 'Deuda anterior', 'Otro de la caja', 'No es de la caja'];
+const TIPOS_GASTO = ['Equipamiento', 'Cancha', 'Otro'];
+
+/** Botones que borran o anulan: el primer toque pide confirmar, el segundo hace la acción. */
+function dobleToque(boton, textoConfirmar, accion) {
+  const original = boton.textContent;
+  let armado = false, t = null;
+  boton.onclick = () => {
+    if (!armado) {
+      armado = true; boton.textContent = textoConfirmar;
+      t = setTimeout(() => { armado = false; boton.textContent = original; }, 5000);
+      return;
+    }
+    clearTimeout(t); armado = false; boton.textContent = original;
+    accion();
+  };
+}
+
+/** Después de guardar: datos nuevos, aviso y la pantalla que corresponda. */
+function despues(seguir) {
+  return r => { ADMIN = r.admin; DATA = r.datos; pintar(); toast(r.mensaje); seguir(r); };
+}
+
+function abrirIntegrante(apodo) {
+  vista = 'integrante';
+  $('s-admin').innerHTML = '<div class="card"><div class="vacio">Cargando…</div></div>';
+  servidor('adminIntegrante', [pin, apodo], r => ir('integrante', r), null, () => ir('integrantes'));
+}
 
 function vInicio() {
   const a = ADMIN;
-  cabeceraAdmin('Panel del administrador', 'Mercado Pago: ' + DATA.actualizado, null);
+  cabeceraAdmin('Panel del administrador', 'Última búsqueda: ' + DATA.actualizado, null);
   const nRev = a.porRevisar.length, nCla = a.porClasificar.length;
   $('s-admin').innerHTML =
     '<h2 class="titulo-sec">Para revisar (' + (nRev + nCla) + ')</h2>' +
     '<button class="tarjeta" data-ver="revisar"><span class="contador' + (nRev ? '' : ' cero') + '">' + nRev + '</span><span class="cuerpo"><span class="nombre">Transferencias sin asignar</span><span class="det">Mercado Pago no sabe de quién son</span></span>' + FLECHA + '</button>' +
     '<button class="tarjeta" data-ver="revisar"><span class="contador' + (nCla ? '' : ' cero') + '">' + nCla + '</span><span class="cuerpo"><span class="nombre">Pagos por clasificar</span><span class="det">Montos que no son múltiplo de la cuota</span></span>' + FLECHA + '</button>' +
+    '<button class="sec" id="buscarYa" style="min-height:48px">Buscar transferencias ahora</button>' +
     '<h2 class="titulo-sec">Cargar</h2><div class="kpis">' +
     '<button class="tarjeta accion" data-ver="efectivo"><span class="icono"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="6" width="19" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/></svg></span><span class="nombre">Pago en efectivo</span></button>' +
     '<button class="tarjeta accion" data-ver="gasto"><span class="icono"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 8h14l-1 12H6z"/><path d="M9 8V6a3 3 0 0 1 6 0v2"/></svg></span><span class="nombre">Gasto</span></button></div>' +
+    '<h2 class="titulo-sec">Corregir</h2><div class="lista">' +
+    '<button data-ver="pagos"><span class="cuerpo"><span class="nombre">Pagos</span><span class="det">Editar o anular un pago cargado</span></span>' + FLECHA + '</button>' +
+    '<button data-ver="gastos"><span class="cuerpo"><span class="nombre">Gastos</span><span class="det">Editar o anular un gasto</span></span>' + FLECHA + '</button></div>' +
     '<h2 class="titulo-sec">Configurar</h2><div class="lista">' +
-    '<button data-ver="integrantes"><span class="cuerpo"><span class="nombre">Integrantes</span><span class="det">' + plural(apodos().length, 'activo', 'activos') + ' · altas y bajas</span></span>' + FLECHA + '</button>' +
+    '<button data-ver="integrantes"><span class="cuerpo"><span class="nombre">Integrantes</span><span class="det">' + plural(apodos().length, 'activo', 'activos') + ' · altas, bajas y datos</span></span>' + FLECHA + '</button>' +
     '<button data-ver="valores"><span class="cuerpo"><span class="nombre">Cuota y cancha</span><span class="det">Cuota ' + pesos(a.cuotaMes) + ' · cancha ' + pesos(a.canchaMes) + '</span></span>' + FLECHA + '</button>' +
+    '<button data-ver="config"><span class="cuerpo"><span class="nombre">Configuración</span><span class="det">Saldo inicial, alias, vencimiento y PIN</span></span>' + FLECHA + '</button>' +
     '<button data-ver="whatsapp"><span class="cuerpo"><span class="nombre">Mensaje para WhatsApp</span><span class="det">Cancha del mes y quién falta</span></span>' + FLECHA + '</button></div>';
   $('s-admin').querySelectorAll('[data-ver]').forEach(b => b.onclick = () => ir(b.dataset.ver));
+  $('buscarYa').onclick = () => {
+    $('buscarYa').textContent = 'Buscando en Mercado Pago…';
+    servidor('adminSincronizar', [pin], listo('inicio'), $('buscarYa'), () => { $('buscarYa').textContent = 'Buscar transferencias ahora'; });
+  };
 }
 
 function vRevisar() {
   const a = ADMIN;
   cabeceraAdmin('Para revisar', '', 'inicio');
-  const sinAsignar = a.porRevisar.length ? a.porRevisar.map((t, i) => '<div class="pendiente"><div class="arriba"><span class="nombre">' + esc(t.nombre || 'Sin nombre') +
-    '</span><span class="num" style="font-size:20px">' + pesos(t.monto) + '</span></div><span class="det">' + esc(t.fecha) + ' · ' + esc(t.medio) + ' · ' + esc(t.motivo) + '</span>' +
-    '<div class="linea-sel"><label class="solo-lector" for="asig' + i + '">Integrante</label><select id="asig' + i + '">' + opciones(quienes(), '', '¿De quién es?') +
+  const sinAsignar = a.porRevisar.length ? a.porRevisar.map((t, i) => '<div class="pendiente"><div class="arriba"><span class="nombre">' + esc(t.nombre || (t.banco ? 'Desde un banco' : 'Sin nombre')) +
+    '</span><span class="num" style="font-size:20px">' + pesos(t.monto) + '</span></div><span class="det">' + esc(t.fecha) + ' · ' + esc(t.medio) + (t.duplicado ? '' : ' · ' + esc(t.motivo)) + '</span>' +
+    (t.duplicado ? '<div class="aviso-box alerta">Posible duplicado: ' + esc(t.duplicado.apodo) + ' ya tiene un pago de ' + pesos(t.duplicado.monto) + ' del ' + esc(t.duplicado.fecha) +
+      ' cargado sin N° de Mercado Pago.</div><button class="prim" style="min-height:44px;font-size:15px" data-mismo="' + i + '">Es el mismo pago de ' + esc(t.duplicado.apodo) + '</button>' : '') +
+    '<div class="linea-sel"><label class="solo-lector" for="asig' + i + '">Integrante</label><select id="asig' + i + '">' + opciones(quienes(), '', t.duplicado ? 'Si no, ¿de quién es?' : '¿De quién es?') +
     '</select><button class="sec" data-asignar="' + i + '">Asignar</button></div><button class="link gris" style="align-self:flex-start" data-descartar="' + i + '">No es de la caja</button></div>').join('')
     : '<div class="vacio">No hay transferencias sin asignar.</div>';
   const clasificar = a.porClasificar.length ? a.porClasificar.map((p, i) => '<div class="pendiente"><div class="arriba"><span class="nombre">' + esc(p.apodo) +
@@ -463,6 +506,10 @@ function vRevisar() {
   });
   $('s-admin').querySelectorAll('[data-descartar]').forEach(b => b.onclick = () => {
     servidor('adminDescartar', [pin, a.porRevisar[b.dataset.descartar].op], listo('revisar'), b);
+  });
+  $('s-admin').querySelectorAll('[data-mismo]').forEach(b => b.onclick = () => {
+    const t = a.porRevisar[b.dataset.mismo];
+    servidor('adminEsElMismo', [pin, t.op, t.duplicado.fila, { apodo: t.duplicado.apodo, monto: t.duplicado.monto }], listo('revisar'), b);
   });
   $('s-admin').querySelectorAll('[data-clas]').forEach(b => b.onclick = () => {
     const p = a.porClasificar[b.dataset.clas];
@@ -605,11 +652,7 @@ function vIntegrantes() {
     if (!$('bQuien').value) return toast('Elegí el integrante.', true);
     servidor('adminBaja', [pin, $('bQuien').value, $('bMes').value], listo('integrantes'), $('bBaja'));
   };
-  $('s-admin').querySelectorAll('[data-int]').forEach(b => b.onclick = () => {
-    const m = a.integrantes[b.dataset.int];
-    $('s-admin').innerHTML = '<div class="card"><div class="vacio">Cargando…</div></div>';
-    servidor('adminIntegrante', [pin, m.apodo], r => ir('integrante', r), null, () => ir('integrantes'));
-  });
+  $('s-admin').querySelectorAll('[data-int]').forEach(b => b.onclick = () => abrirIntegrante(a.integrantes[b.dataset.int].apodo));
 }
 
 function vIntegrante(x) {
@@ -620,21 +663,152 @@ function vIntegrante(x) {
   $('s-admin').innerHTML =
     '<div class="kpis"><div class="card kpi"><span class="etq2">Debe</span><span class="num rojo">' + pesos(x.deuda) + '</span></div><div class="card kpi"><span class="etq2">Adelantado</span><span class="num">' + pesos(x.adelantado) + '</span></div></div>' +
     (meses.length ? '<div class="card"><h2>Meses que debe</h2>' + meses.map(s => '<div class="fila"><span class="cuerpo">' + esc(s.mes) + (s.medio ? ' (media cuota)' : '') + '</span><b class="rojo">faltan ' + pesos(s.falta) + '</b></div>').join('') + '</div>' : '') +
-    '<div class="card"><h2>Pagos</h2>' + (x.pagos.length ? x.pagos.map((p, i) => '<div class="pendiente"><div class="arriba"><span class="nombre">' + esc(p.fecha) + '</span><span class="num" style="font-size:20px">' + pesos(p.monto) + '</span></div>' +
-      '<span class="det">' + esc(p.medio) + '</span><div class="linea-sel"><label class="solo-lector" for="rc' + i + '">Imputación</label><select id="rc' + i + '">' +
-      opciones(['Cuota', 'Deuda anterior', 'Otro de la caja', 'No es de la caja'].concat(p.imputacion === 'Por clasificar' ? ['Por clasificar'] : []), p.imputacion) +
-      '</select><button class="sec" data-rc="' + i + '">Cambiar</button></div></div>').join('') : '<div class="vacio">Sin pagos cargados.</div>') + '</div>' +
-    (m.baja ? '<button class="sec" id="reactivar" style="min-height:48px">Volver a activo</button>' : '');
-  $('s-admin').querySelectorAll('[data-rc]').forEach(b => b.onclick = () => {
-    const p = x.pagos[b.dataset.rc];
-    const imp = $('rc' + b.dataset.rc).value;
-    if (imp === p.imputacion || imp === 'Por clasificar') return toast('Elegí una opción distinta.', true);
-    servidor('adminClasificar', [pin, p.fila, imp, { apodo: x.apodo, monto: p.monto }], r => {
-      ADMIN = r.admin; DATA = r.datos; pintar(); toast(r.mensaje);
-      servidor('adminIntegrante', [pin, x.apodo], d => ir('integrante', d));
-    }, b);
-  });
-  if ($('reactivar')) $('reactivar').onclick = () => servidor('adminBaja', [pin, x.apodo, ''], listo('integrantes'), $('reactivar'));
+    '<h2 class="titulo-sec">Pagos (tocá uno para editarlo o anularlo)</h2>' + listaPagos(x.pagos, false) +
+    '<button class="sec" id="editarDatos" style="min-height:48px">Editar datos de ' + esc(x.apodo) + '</button>' +
+    (m.baja ? '<button class="sec" id="reactivar" style="min-height:48px">Deshacer la baja (vuelve a jugar)</button>' : '');
+  $('s-admin').querySelectorAll('[data-pago]').forEach(b => b.onclick = () => ir('pago', { p: x.pagos[b.dataset.pago], integrante: x.apodo }));
+  $('editarDatos').onclick = () => ir('editarIntegrante', x);
+  if ($('reactivar')) $('reactivar').onclick = () => servidor('adminBaja', [pin, x.apodo, ''], despues(() => abrirIntegrante(x.apodo)), $('reactivar'));
+}
+
+function vEditarIntegrante(x) {
+  if (!x) return ir('integrantes');
+  const d = x.datos;
+  cabeceraAdmin('Editar ' + x.apodo, '', () => abrirIntegrante(x.apodo));
+  $('s-admin').innerHTML = '<div class="card">' +
+    '<div class="campo"><label for="eiApodo">Apodo</label><input type="text" id="eiApodo" maxlength="30" value="' + esc(x.apodo) + '"><p class="ayuda" style="margin-top:6px">Si lo cambiás, también cambia en sus pagos.</p></div>' +
+    '<div class="dos"><div class="campo"><label for="eiNombre">Nombre</label><input type="text" id="eiNombre" maxlength="40" value="' + esc(d.nombre) + '"></div>' +
+    '<div class="campo"><label for="eiApellido">Apellido</label><input type="text" id="eiApellido" maxlength="40" value="' + esc(d.apellido) + '"></div></div>' +
+    '<div class="campo"><label for="eiAlta">Fecha en que se anotó</label><input type="date" id="eiAlta" value="' + esc(d.alta) + '"><p class="ayuda" style="margin-top:6px">Vacía: juega desde el inicio de la temporada. Después del día 15, ese mes paga media cuota.</p></div>' +
+    '<div class="campo"><label for="eiCuits">CUIT (si tiene varios, separados por coma)</label><input type="text" id="eiCuits" inputmode="numeric" value="' + esc(d.cuits) + '"></div>' +
+    '<div class="campo"><label for="eiCvus">CVU o CBU (si tiene varios, separados por coma)</label><input type="text" id="eiCvus" value="' + esc(d.cvus) + '"></div>' +
+    (d.cuentasMp.length ? '<div><span class="lbl">Cuentas de Mercado Pago reconocidas</span>' + d.cuentasMp.map(c => '<label class="check"><input type="checkbox" data-cuenta="' + esc(c.id) +
+      '" checked> Cuenta terminada en ' + esc(c.fin) + '</label>').join('') + '<p class="ayuda">Destildá una cuenta si no es de ' + esc(x.apodo) + ': sus transferencias van a ir a "Para revisar".</p></div>' : '') +
+    '<p class="ayuda">Con el CUIT, sus transferencias de Mercado Pago se cargan solas.</p><button class="prim" id="eiGuardar">Guardar datos</button></div>';
+  $('eiGuardar').onclick = () => {
+    const datos = { apodo: $('eiApodo').value, nombre: $('eiNombre').value, apellido: $('eiApellido').value, alta: $('eiAlta').value,
+      cuits: $('eiCuits').value, cvus: $('eiCvus').value,
+      cuentasMp: Array.from($('s-admin').querySelectorAll('[data-cuenta]')).filter(c => c.checked).map(c => c.dataset.cuenta) };
+    if (!datos.apodo.trim()) return toast('Escribí el apodo.', true);
+    servidor('adminEditarIntegrante', [pin, x.apodo, datos], despues(r => abrirIntegrante(r.apodo)), $('eiGuardar'));
+  };
+}
+
+// ---------------------------------------------------------------- corregir pagos y gastos
+let filtroPagos = '';
+
+function listaPagos(pagos, conNombre) {
+  if (!pagos.length) return '<div class="card"><div class="vacio">Sin pagos cargados.</div></div>';
+  return '<div class="lista">' + pagos.map((p, i) => {
+    const anulado = p.imputacion === 'Anulado';
+    return '<button data-pago="' + i + '"><span class="cuerpo"><span class="nombre' + (anulado ? ' tachado' : '') + '">' + (conNombre ? esc(p.apodo) + ' · ' : '') + pesos(p.monto) +
+      '</span><span class="det">' + esc(p.fecha) + ' · ' + esc(p.medio) + '</span></span><span class="etiqueta' + (anulado ? ' anulado' : '') + '">' + esc(p.imputacion) + '</span>' + FLECHA + '</button>';
+  }).join('') + '</div>';
+}
+
+function vPagos() {
+  const a = ADMIN;
+  cabeceraAdmin('Pagos', 'Tocá un pago para editarlo o anularlo', 'inicio');
+  const lista = a.pagos.filter(p => !filtroPagos || p.apodo === filtroPagos);
+  $('s-admin').innerHTML = '<div class="card"><label for="pFiltro">Integrante</label><select id="pFiltro">' + opciones(quienes(), filtroPagos, 'Todos') + '</select></div>' +
+    listaPagos(lista, true) + (a.pagos.length >= 300 ? '<p class="ayuda">Se ven los últimos 300 pagos. Elegí un integrante para ver los suyos.</p>' : '');
+  $('pFiltro').onchange = () => { filtroPagos = $('pFiltro').value; vPagos(); };
+  $('s-admin').querySelectorAll('[data-pago]').forEach(b => b.onclick = () => ir('pago', { p: lista[b.dataset.pago] }));
+}
+
+/** Editar o anular un pago. Vuelve a la lista de pagos o al integrante desde el que se abrió (x.integrante). */
+function vPago(x) {
+  if (!x || !x.p) return ir('pagos');
+  const p = x.p;
+  const anulado = p.imputacion === 'Anulado';
+  const volver = x.integrante ? () => abrirIntegrante(x.integrante) : 'pagos';
+  const seguir = () => (x.integrante ? abrirIntegrante(x.integrante) : ir('pagos'));
+  cabeceraAdmin('Pago de ' + p.apodo, p.fecha + ' · ' + pesos(p.monto), volver);
+  const gente = quienes();
+  if (!gente.some(o => o.clave === p.apodo)) gente.unshift({ clave: p.apodo, texto: p.apodo + ' (no está en Integrantes)' });
+  const imps = IMPUTACIONES.concat(p.imputacion === 'Por clasificar' ? ['Por clasificar'] : []);
+  $('s-admin').innerHTML = '<div class="card">' +
+    (anulado ? '<div class="aviso-box alerta">Este pago está anulado: no suma. Para restaurarlo, elegí a qué corresponde y tocá "Restaurar pago".</div>' : '') +
+    (p.bloqueado ? '<div class="aviso-box info">Vino de Mercado Pago: el monto y la fecha no se cambian. Si está mal, anulalo.</div>' : '') +
+    '<div class="campo"><label for="pQuien">Integrante</label><select id="pQuien">' + opciones(gente, p.apodo) + '</select></div>' +
+    '<div class="dos"><div class="campo"><label for="pMonto">Monto ($)</label><input type="number" id="pMonto" inputmode="numeric" min="1" step="1" value="' + esc(p.monto) + '"' + (p.bloqueado ? ' disabled' : '') + '></div>' +
+    '<div class="campo"><label for="pFecha">Fecha</label><input type="date" id="pFecha" value="' + esc(p.iso) + '" max="' + esc(ADMIN.hoy) + '"' + (p.bloqueado ? ' disabled' : '') + '></div></div>' +
+    '<div class="campo"><label for="pImp">Es por</label><select id="pImp">' + opciones(imps, anulado ? '' : p.imputacion, anulado ? 'Elegí' : '') + '</select></div>' +
+    '<div class="campo"><label for="pNota">Nota (opcional)</label><input type="text" id="pNota" maxlength="200"></div>' +
+    '<button class="prim" id="pGuardar">' + (anulado ? 'Restaurar pago' : 'Guardar cambios') + '</button>' +
+    (anulado ? '' : '<button class="peligro" id="pAnular">Anular pago</button><p class="ayuda">Un pago anulado deja de sumar, pero queda registrado.</p>') +
+    (p.notas ? '<p class="ayuda">Notas: ' + esc(p.notas) + '</p>' : '') + '</div>';
+  const esperado = { apodo: p.apodo, monto: p.monto };
+  $('pGuardar').onclick = () => {
+    const d = { apodo: $('pQuien').value, monto: $('pMonto').value, fecha: $('pFecha').value, imputacion: $('pImp').value, nota: $('pNota').value };
+    if (!d.imputacion) return toast('Elegí a qué corresponde el pago.', true);
+    servidor('adminEditarPago', [pin, p.fila, esperado, d], despues(seguir), $('pGuardar'));
+  };
+  if ($('pAnular')) dobleToque($('pAnular'), 'Tocá de nuevo para anular', () =>
+    servidor('adminAnularPago', [pin, p.fila, esperado], despues(seguir), $('pAnular')));
+}
+
+function vGastos() {
+  const a = ADMIN;
+  cabeceraAdmin('Gastos', 'Tocá un gasto para editarlo o anularlo', 'inicio');
+  $('s-admin').innerHTML = a.gastos.length ? '<div class="lista">' + a.gastos.map((g, i) => '<button data-gasto="' + i + '"><span class="cuerpo"><span class="nombre' + (g.anulado ? ' tachado' : '') + '">' +
+    esc(g.concepto || g.tipo) + ' · ' + pesos(g.monto) + '</span><span class="det">' + esc(g.fecha) + (g.destinatario ? ' · ' + esc(g.destinatario) : '') + '</span></span><span class="etiqueta' +
+    (g.anulado ? ' anulado' : '') + '">' + esc(g.tipo) + '</span>' + FLECHA + '</button>').join('') + '</div>' : '<div class="card"><div class="vacio">Sin gastos cargados.</div></div>';
+  $('s-admin').querySelectorAll('[data-gasto]').forEach(b => b.onclick = () => ir('gastoEditar', a.gastos[b.dataset.gasto]));
+}
+
+function vGastoEditar(g) {
+  if (!g) return ir('gastos');
+  cabeceraAdmin(g.concepto || 'Gasto', g.fecha + ' · ' + pesos(g.monto), 'gastos');
+  $('s-admin').innerHTML = '<div class="card">' +
+    (g.anulado ? '<div class="aviso-box alerta">Este gasto está anulado: no resta. Para restaurarlo, elegí el tipo y tocá "Restaurar gasto".</div>' : '') +
+    (g.bloqueado ? '<div class="aviso-box info">Vino de Mercado Pago: el monto y la fecha no se cambian. Si está mal, anulalo.</div>' : '') +
+    '<div class="campo"><label for="geTipo">Tipo</label><select id="geTipo">' + opciones(TIPOS_GASTO, g.anulado ? '' : g.tipo, g.anulado ? 'Elegí' : '') + '</select></div>' +
+    '<div class="campo"><label for="geConcepto">Concepto</label><input type="text" id="geConcepto" maxlength="80" value="' + esc(g.concepto) + '"></div>' +
+    '<div class="campo"><label for="geDest">Destinatario</label><input type="text" id="geDest" maxlength="80" value="' + esc(g.destinatario) + '"></div>' +
+    '<div class="dos"><div class="campo"><label for="geMonto">Monto ($)</label><input type="number" id="geMonto" inputmode="numeric" min="1" step="1" value="' + esc(g.monto) + '"' + (g.bloqueado ? ' disabled' : '') + '></div>' +
+    '<div class="campo"><label for="geFecha">Fecha</label><input type="date" id="geFecha" value="' + esc(g.iso) + '" max="' + esc(ADMIN.hoy) + '"' + (g.bloqueado ? ' disabled' : '') + '></div></div>' +
+    '<button class="prim" id="geGuardar">' + (g.anulado ? 'Restaurar gasto' : 'Guardar cambios') + '</button>' +
+    (g.anulado ? '' : '<button class="peligro" id="geAnular">Anular gasto</button><p class="ayuda">Un gasto anulado deja de restar, pero queda registrado.</p>') +
+    (g.notas ? '<p class="ayuda">Notas: ' + esc(g.notas) + '</p>' : '') + '</div>';
+  const esperado = { monto: g.monto, concepto: g.concepto };
+  $('geGuardar').onclick = () => {
+    const d = { tipo: $('geTipo').value, concepto: $('geConcepto').value, destinatario: $('geDest').value, monto: $('geMonto').value, fecha: $('geFecha').value };
+    if (!d.tipo) return toast('Elegí el tipo de gasto.', true);
+    if (!d.concepto.trim()) return toast('Escribí el concepto.', true);
+    servidor('adminEditarGasto', [pin, g.fila, esperado, d], listo('gastos'), $('geGuardar'));
+  };
+  if ($('geAnular')) dobleToque($('geAnular'), 'Tocá de nuevo para anular', () =>
+    servidor('adminAnularGasto', [pin, g.fila, esperado], listo('gastos'), $('geAnular')));
+}
+
+function vConfig() {
+  const c = ADMIN.config;
+  cabeceraAdmin('Configuración', '', 'inicio');
+  $('s-admin').innerHTML =
+    '<div class="card"><h2>Caja y cancha</h2>' +
+    '<div class="campo"><label for="cSaldo">Saldo inicial de la caja ($)</label><input type="number" id="cSaldo" inputmode="numeric" min="0" step="1" value="' + esc(c.saldoInicial) + '"><p class="ayuda" style="margin-top:6px">La plata que había en la caja al empezar la temporada.</p></div>' +
+    '<div class="campo"><label for="cAlias">Alias para transferir</label><input type="text" id="cAlias" maxlength="40" autocapitalize="none" autocomplete="off" value="' + esc(c.alias) + '"><p class="ayuda" style="margin-top:6px">Lo ve el equipo en la app.</p></div>' +
+    '<div class="campo"><label for="cVence">Día de vencimiento de la cancha</label><input type="number" id="cVence" inputmode="numeric" min="1" max="28" step="1" value="' + esc(c.vence) + '"></div>' +
+    '<button class="prim" id="cGuardar">Guardar</button></div>' +
+    '<div class="card"><h2>Cambiar PIN</h2>' +
+    '<div class="campo"><label for="cActual">PIN actual</label><input type="password" id="cActual" inputmode="numeric" autocomplete="current-password" maxlength="12"></div>' +
+    '<div class="dos"><div class="campo"><label for="cNuevo">PIN nuevo</label><input type="password" id="cNuevo" inputmode="numeric" autocomplete="new-password" maxlength="12"></div>' +
+    '<div class="campo"><label for="cRepetir">Repetilo</label><input type="password" id="cRepetir" inputmode="numeric" autocomplete="new-password" maxlength="12"></div></div>' +
+    '<button class="prim" id="cPin">Cambiar PIN</button><p class="ayuda">De 6 a 12 números. Los otros celulares recordados van a tener que volver a entrar. Si te olvidás el PIN, lo definís de nuevo desde el menú de la planilla.</p></div>' +
+    '<p class="ayuda">La clave de Mercado Pago se cambia desde el menú de la planilla: así nadie la puede cambiar con solo saber el PIN.</p>';
+  $('cGuardar').onclick = () => servidor('adminConfig', [pin, { saldoInicial: $('cSaldo').value, alias: $('cAlias').value, vence: $('cVence').value }], listo('config'), $('cGuardar'));
+  $('cPin').onclick = () => {
+    const actual = $('cActual').value.trim(), nuevo = $('cNuevo').value.trim();
+    if (!actual) return toast('Escribí tu PIN actual.', true);
+    if (!/^\d{6,12}$/.test(nuevo)) return toast('El PIN nuevo tiene que tener de 6 a 12 números.', true);
+    if (nuevo !== $('cRepetir').value.trim()) return toast('Los dos PIN nuevos no coinciden.', true);
+    servidor('adminCambiarPin', [pin, actual, nuevo, /^t:/.test(pin)], r => {
+      pin = r.token || nuevo;
+      try { if (r.token) localStorage.setItem(CLAVE_PIN, r.token); else localStorage.removeItem(CLAVE_PIN); } catch (e) {}
+      toast(r.mensaje); ir('inicio');
+    }, $('cPin'));
+  };
 }
 
 function vValores() {
@@ -649,17 +823,57 @@ function vValores() {
     '<div class="dos"><div class="campo"><label for="vMonto">Monto ($)</label><input type="number" id="vMonto" inputmode="numeric" min="1" step="1" value="' + esc(ult.cuota || '') + '"></div>' +
     '<div class="campo"><label for="vDesde">Vigente desde</label><select id="vDesde">' + opciones(a.mesesValor, a.mesesValor[1] ? a.mesesValor[1].clave : '') + '</select></div></div>' +
     '<button class="sec" id="vVer" style="min-height:48px">Ver qué cambia</button><div id="vImpacto"></div>' +
-    '<button class="prim" id="vGuardar">Guardar nuevo valor</button><p class="ayuda">Los meses anteriores a "vigente desde" no cambian.</p></div>' +
-    '<div class="card"><h2>Historial</h2><div class="tabla"><span class="h">Desde</span><span class="h der">Cuota</span><span class="h der">Cancha</span>' +
-    a.valores.map(v => '<span>' + esc(v.texto) + '</span><span class="der">' + pesos(v.cuota) + '</span><span class="der">' + pesos(v.cancha) + '</span>').join('') + '</div></div>';
-  activarOpciones($('s-admin'), 'tipoValor', t => { $('vMonto').value = t === 'cuota' ? (ult.cuota || '') : (ult.cancha || ''); $('vImpacto').innerHTML = ''; });
-  const datos = () => ({ tipo: estadoForm.tipoValor, monto: $('vMonto').value, desde: $('vDesde').value });
-  $('vVer').onclick = () => servidor('adminSimularValor', [pin, datos()], r => {
-    const lineas = r.afectados.map(x => esc(x.apodo) + ' tiene ese mes pagado: va a deber la diferencia de ' + pesos(x.diferencia) + '.');
-    lineas.push('Desde ' + esc(r.desde) + ' se necesitan ' + r.necesarios + ' cuotas para cubrir la cancha.');
-    $('vImpacto').innerHTML = '<div class="aviso-box alerta" style="display:flex;flex-direction:column;gap:6px"><b>Qué cambia con este valor</b>' + lineas.map(l => '<span>' + l + '</span>').join('') + '</div>';
-  }, $('vVer'));
+    '<button class="prim" id="vGuardar" disabled>Guardar nuevo valor</button><p class="ayuda">Primero tocá "Ver qué cambia". Los meses anteriores a "vigente desde" no cambian.</p></div>' +
+    '<h2 class="titulo-sec">Valores cargados (tocá uno para corregirlo o borrarlo)</h2><div class="lista">' +
+    a.filasValores.map((v, i) => '<button data-fila-valor="' + i + '"><span class="cuerpo"><span class="nombre">Desde ' + esc(v.texto) + '</span><span class="det">Cuota ' +
+      (v.cuota ? pesos(v.cuota) : 'sigue igual') + ' · cancha ' + (v.cancha ? pesos(v.cancha) : 'sigue igual') + '</span></span>' + FLECHA + '</button>').join('') + '</div>';
+  const limpiar = () => { $('vImpacto').innerHTML = ''; $('vGuardar').disabled = true; };
+  activarOpciones($('s-admin'), 'tipoValor', t => { $('vMonto').value = t === 'cuota' ? (ult.cuota || '') : (ult.cancha || ''); limpiar(); });
+  $('vMonto').oninput = limpiar;
+  $('vDesde').onchange = limpiar;
+  const datos = () => ({ modo: 'nuevo', tipo: estadoForm.tipoValor, monto: $('vMonto').value, desde: $('vDesde').value });
+  $('vVer').onclick = () => servidor('adminSimularValor', [pin, datos()], r => { mostrarImpacto($('vImpacto'), r, 'Qué cambia con este valor'); $('vGuardar').disabled = false; }, $('vVer'));
   $('vGuardar').onclick = () => servidor('adminNuevoValor', [pin, datos()], listo('valores'), $('vGuardar'));
+  $('s-admin').querySelectorAll('[data-fila-valor]').forEach(b => b.onclick = () => ir('valor', a.filasValores[b.dataset.filaValor]));
+}
+
+function mostrarImpacto(cont, r, titulo) {
+  const lineas = r.afectados.map(x => esc(x.apodo) + ' tiene que pagar ' + pesos(Math.abs(x.diferencia)) + (x.diferencia > 0 ? ' más.' : ' menos.'));
+  if (!lineas.length) lineas.push('Nadie cambia lo que tiene que pagar.');
+  lineas.push('Desde ' + esc(r.desde) + ' se necesitan ' + r.necesarios + ' cuotas para cubrir la cancha.');
+  cont.innerHTML = '<div class="aviso-box alerta" style="display:flex;flex-direction:column;gap:6px"><b>' + esc(titulo) + '</b>' + lineas.map(l => '<span>' + l + '</span>').join('') + '</div>';
+}
+
+/** Corregir o borrar un valor cargado (decisión 35): siempre con vista previa antes de guardar. */
+function vValor(v) {
+  if (!v) return ir('valores');
+  cabeceraAdmin('Valor desde ' + v.texto, 'Corregir o borrar', 'valores');
+  $('s-admin').innerHTML = '<div class="card">' +
+    '<div class="campo"><label for="vvDesde">Vigente desde</label><select id="vvDesde">' + opciones(ADMIN.mesesTemporada, v.clave) + '</select></div>' +
+    '<div class="dos"><div class="campo"><label for="vvCuota">Cuota ($)</label><input type="number" id="vvCuota" inputmode="numeric" min="1" step="1" value="' + esc(v.cuota || '') + '"></div>' +
+    '<div class="campo"><label for="vvCancha">Cancha ($)</label><input type="number" id="vvCancha" inputmode="numeric" min="1" step="1" value="' + esc(v.cancha || '') + '"></div></div>' +
+    '<p class="ayuda">Vacío: sigue el valor de antes.</p>' +
+    '<button class="sec" id="vvVer" style="min-height:48px">Ver qué cambia</button><div id="vvImpacto"></div>' +
+    '<button class="prim" id="vvGuardar" disabled>Guardar corrección</button>' +
+    '<button class="peligro" id="vvBorrar">Borrar este valor</button></div>';
+  const datos = modo => ({ modo: modo, fila: v.fila, esperado: v.clave, desde: $('vvDesde').value, cuota: $('vvCuota').value, cancha: $('vvCancha').value });
+  let borrarListo = false;
+  const limpiar = () => {
+    $('vvImpacto').innerHTML = ''; $('vvGuardar').disabled = true;
+    borrarListo = false; $('vvBorrar').textContent = 'Borrar este valor';
+  };
+  $('vvDesde').onchange = limpiar; $('vvCuota').oninput = limpiar; $('vvCancha').oninput = limpiar;
+  $('vvVer').onclick = () => servidor('adminSimularValor', [pin, datos('editar')], r => {
+    limpiar(); mostrarImpacto($('vvImpacto'), r, 'Qué cambia con la corrección'); $('vvGuardar').disabled = false;
+  }, $('vvVer'));
+  $('vvGuardar').onclick = () => servidor('adminEditarValor', [pin, datos('editar')], listo('valores'), $('vvGuardar'));
+  $('vvBorrar').onclick = () => {
+    if (borrarListo) return servidor('adminBorrarValor', [pin, datos('borrar')], listo('valores'), $('vvBorrar'));
+    servidor('adminSimularValor', [pin, datos('borrar')], r => {
+      limpiar(); mostrarImpacto($('vvImpacto'), r, 'Qué cambia si lo borrás');
+      borrarListo = true; $('vvBorrar').textContent = 'Confirmar: borrar este valor';
+    }, $('vvBorrar'));
+  };
 }
 
 function vWhatsapp() {

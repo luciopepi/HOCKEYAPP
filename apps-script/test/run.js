@@ -174,7 +174,7 @@ for (const n of ['Pagos', 'Por revisar', 'Gastos', 'Integrantes']) {
 }
 info('B36 = ' + B(W, 'B36'));
 
-section('S3 payment older than "Importar desde" is ignored');
+section('S3 payment older than the search window is ignored (the first sync already searched from the season start)');
 W.payments.push(pay({ id: 1007, created: '2026-10-08 10:00', payerId: ID.Juancho, cuit: '20301112223', amount: 17000 }));
 err = sync(W, '2026-10-12 16:00');
 check('sync does not throw', !err, err && err.stack);
@@ -271,15 +271,13 @@ section('D3 attacker-controlled text written to non-text cells (formula injectio
   check('description stored as plain text, not as a formula', w.formulas.length === 0, 'formulas created: ' + w.formulas.join(' | '));
 }
 
-section('D4 trigger running before "Importar desde" (today 09/10, B33=10/10)');
+section('D4 trigger running before the season starts (today 30/09, season from 01/10)');
 {
   const w = newWorld(basePayments(), { mp: { invalidRange: 'error400' } });
-  err = sync(w, '2026-10-09 20:00');
-  check('no error when Importar desde is in the future (API rejects begin>end)', !err, err && (err.message + ' | B36=' + B(w, 'B36')));
-  info('search URL: ' + (w.fetches.find(u => /search/.test(u)) || '').replace('https://api.mercadopago.com', ''));
-  const w2 = newWorld(basePayments(), { mp: { invalidRange: 'empty' } });
-  err = sync(w2, '2026-10-09 20:00');
-  info('if API instead returns empty: error=' + (err ? err.message : 'none') + ' B36=' + B(w2, 'B36'));
+  err = sync(w, '2026-09-30 20:00');
+  check('no error when the season starts in the future (API rejects begin>end)', !err, err && (err.message + ' | B36=' + B(w, 'B36')));
+  check('result says it is waiting', /En espera/.test(B(w, 'B36')), B(w, 'B36'));
+  check('no search was sent', !w.fetches.some(u => /search/.test(u)));
 }
 
 section('D5 manual op number displayed with thousands separators (format #,##0)');
@@ -907,6 +905,218 @@ section('A10 funciones del menú no se pueden usar desde la app');
     .map(f => intentar(() => w.ctx[f]()));
   check('sin la planilla abierta, todas cortan', intentos.every(x => x.e && /getUi/.test(x.e.message)), intentos.map(x => x.e && x.e.message).join(' | '));
   check('el disparador sigue activo', w.triggers.length === 1);
+}
+
+section('B1 pagos: anular, restaurar y corregir desde el panel');
+{
+  const w = mundoAdmin();
+  const adel = r => r.admin.integrantes.find(m => m.apodo === 'Colo').adelantado;
+  let x = intentar(() => w.ctx.adminCargarPago(PIN, { apodo: 'Colo', monto: '1', fecha: '2026-10-10', tipo: 'Cuota' }));
+  const fila = w.sheet('Pagos').getLastRow();
+  const antes = adel(x.r);
+  const p = x.r.admin.pagos.find(q => q.fila === fila);
+  check('el panel lista el pago de prueba, editable', p && p.monto === 1 && !p.bloqueado && p.imputacion === 'Cuota' && p.iso === '2026-10-10', JSON.stringify(p));
+  x = intentar(() => w.ctx.adminAnularPago(PIN, fila, { apodo: 'Colo', monto: 1 }));
+  check('anula sin error', !x.e, x.e && x.e.stack);
+  const f1 = w.sheet('Pagos').rows(fila)[0];
+  check('queda en la planilla: Anulado, tachado y con nota', f1[3] === 'Anulado' && w.sheet('Pagos').raw(fila, 1).line === 'line-through' && /Anulado \(era Cuota\)/.test(f1[9]), JSON.stringify(f1));
+  check('deja de sumar', adel(x.r) === antes - 1, adel(x.r) + ' vs ' + antes);
+  x = intentar(() => w.ctx.adminAnularPago(PIN, fila, { apodo: 'Colo', monto: 1 }));
+  check('anular dos veces: error claro', x.e && /ya está anulado/.test(x.e.message));
+  x = intentar(() => w.ctx.adminEditarPago(PIN, fila, { apodo: 'Colo', monto: 1 }, { apodo: 'Colo', monto: '15000', fecha: '2026-10-09', imputacion: 'Cuota', nota: 'era de 15.000' }));
+  check('restaura corrigiendo monto y fecha', !x.e, x.e && x.e.stack);
+  const f2 = w.sheet('Pagos').rows(fila)[0];
+  check('fila restaurada: monto, fecha, Cuota, sin tachar y nota con el cambio', f2[2] === '15000' && f2[0] === '09/10/2026' && f2[3] === 'Cuota' &&
+    w.sheet('Pagos').raw(fila, 1).line === 'none' && /restaurado como Cuota/.test(f2[9]) && /monto \$1 → \$15\.000/.test(f2[9]) && /Nota: era de 15\.000/.test(f2[9]), JSON.stringify(f2));
+  check('vuelve a sumar con el monto corregido', adel(x.r) === antes - 1 + 15000, adel(x.r) + ' vs ' + antes);
+  const mp = x.r.admin.pagos.find(q => q.apodo === 'Juancho' && q.bloqueado);
+  check('los pagos con N° de Mercado Pago figuran bloqueados', !!mp);
+  x = intentar(() => w.ctx.adminEditarPago(PIN, mp.fila, { apodo: 'Juancho', monto: mp.monto }, { apodo: 'Tano', monto: '999', fecha: '2026-10-01', imputacion: 'Otro de la caja' }));
+  const f3 = w.sheet('Pagos').rows(mp.fila)[0];
+  check('Mercado Pago: cambia integrante e imputación, no monto ni fecha', !x.e && f3[1] === 'Tano' && f3[3] === 'Otro de la caja' && f3[2] === '15000' && f3[0] === mp.fecha, x.e ? x.e.message : JSON.stringify(f3));
+  x = intentar(() => w.ctx.adminEditarPago(PIN, mp.fila, { apodo: 'Juancho', monto: 15000 }, { apodo: 'Juancho', monto: '15000', fecha: '2026-10-01', imputacion: 'Cuota' }));
+  check('si la fila cambió, no pisa nada', x.e && /cambió/.test(x.e.message));
+  x = intentar(() => w.ctx.adminEditarPago(PIN, mp.fila, { apodo: 'Tano', monto: 15000 }, { apodo: 'Tano', imputacion: 'Otro de la caja' }));
+  check('sin cambios: avisa', x.e && /No cambiaste nada/.test(x.e.message), x.e && x.e.message);
+  x = intentar(() => w.ctx.adminEditarPago(PIN, fila, { apodo: 'Colo', monto: 15000 }, { apodo: 'Colo', monto: '15000', fecha: '2026-10-09', imputacion: 'Anulado' }));
+  check('no se anula editando: hay que usar Anular', x.e && /Elegí a qué corresponde/.test(x.e.message));
+  x = intentar(() => w.ctx.adminEditarPago(PIN, fila, { apodo: 'Colo', monto: 15000 }, { apodo: 'Colo', monto: '15000', fecha: '2026-10-11', imputacion: 'Cuota' }));
+  check('no acepta fechas futuras', x.e && /fecha/.test(x.e.message));
+  x = intentar(() => w.ctx.adminAnularPago('000000', fila, { apodo: 'Colo', monto: 15000 }));
+  check('sin PIN no anula', x.e && /PIN/.test(x.e.message) && w.sheet('Pagos').rows(fila)[0][3] === 'Cuota');
+}
+
+section('B2 primera búsqueda desde el inicio de la temporada y posibles duplicados');
+{
+  const RICARDO = 444000777;
+  const w = mundoAdmin(basePayments().concat([
+    pay({ id: 183283723424, created: '2026-10-09 13:17', payerId: ME, amount: 15000, ptype: 'bank_transfer', pmethod: 'cvu' }),
+    pay({ id: 182369302197, created: '2026-10-09 21:55', payerId: RICARDO, cuit: '20111111112', amount: 15000, first: 'Ricardo', last: 'Pereyra' }),
+    pay({ id: 181809839545, created: '2026-10-07 00:08', payerId: ME, amount: 15000, ptype: 'bank_transfer', pmethod: 'cvu' }),
+  ]));
+  // Cargados a mano desde comprobantes del banco: con el número del banco, no el de Mercado Pago.
+  const pg = w.sheet('Pagos');
+  pg.getRange(pg.getLastRow() + 1, 1, 1, 10).setValues([[w.mkDate(art('2026-10-09 00:00').getTime()), 'Colo', 15000, 'Cuota', 'Transferencia bancaria', '', '', '', '86648591', '']]);
+  pg.getRange(pg.getLastRow() + 1, 1, 1, 10).setValues([[w.mkDate(art('2026-10-07 00:00').getTime()), 'Dieguito', 15000, 'Cuota', 'Transferencia bancaria', '', '', '', 'D4RO172VPM45GOJ12KJ3QE', '']]);
+  // Como en la planilla real: la sincronización ya corría desde el 10/10.
+  w.sheet('Config').getRange('B35').setValue(w.mkDate(art('2026-10-10 22:00').getTime()));
+  let err = sync(w, '2026-10-11 10:00');
+  check('sync sin error', !err, err && err.stack);
+  const busquedas = () => w.fetches.filter(u => /payments\/search/.test(u)).map(decodeURIComponent);
+  check('busca desde el 01/10 aunque ya había sincronizado', busquedas().some(u => /begin_date=2026-10-01T00:00/.test(u)), busquedas()[0]);
+  const rev = revisar(w);
+  const motivo = id => (findOp(rev, 7, id)[0] || [])[8] || '';
+  check('las 3 transferencias van a Por revisar', ['183283723424', '182369302197', '181809839545'].every(id => findOp(rev, 7, id).length === 1), JSON.stringify(rev));
+  check('las del banco avisan posible duplicado de Colo y de Dieguito', /Posible duplicado: Colo/.test(motivo('183283723424')) && /Posible duplicado: Dieguito/.test(motivo('181809839545')), motivo('183283723424') + ' | ' + motivo('181809839545'));
+  check('la de Ricardo: no coincide con nadie', /No coincide/.test(motivo('182369302197')));
+  check('ninguna entra sola a Pagos', !rowsOf(w, 'Pagos').some(r => ['183283723424', '182369302197', '181809839545'].includes(r[8])));
+  w.fetches.length = 0;
+  err = sync(w, '2026-10-11 10:30');
+  check('la búsqueda siguiente ya es corta (2 días)', !err && busquedas().some(u => /begin_date=2026-10-09T10:00/.test(u)), busquedas()[0]);
+  let x = intentar(() => w.ctx.adminEntrar(PIN));
+  const t = x.r.porRevisar.find(y => y.op === '183283723424');
+  check('el panel muestra el posible duplicado', t && t.duplicado && t.duplicado.apodo === 'Colo' && t.duplicado.fecha === '09/10' && t.duplicado.monto === 15000, JSON.stringify(t));
+  check('la de Ricardo no tiene duplicado', !x.r.porRevisar.find(y => y.op === '182369302197').duplicado);
+  x = intentar(() => w.ctx.adminEsElMismo(PIN, t.op, t.duplicado.fila, { apodo: 'Colo', monto: 15000 }));
+  check('"Es el mismo" sin error', !x.e, x.e && x.e.stack);
+  const colo = rowsOf(w, 'Pagos').find(r => r[1] === 'Colo' && r[8] === '183283723424');
+  check('el pago de Colo queda con el N° de Mercado Pago y el del banco en la nota', colo && /86648591/.test(colo[9]), JSON.stringify(colo));
+  check('sale de Por revisar y no se suma dos veces', !findOp(revisar(w), 7, '183283723424').length &&
+    rowsOf(w, 'Pagos').filter(r => r[1] === 'Colo' && r[2] === '15000' && /^09\/10\/2026/.test(r[0])).length === 1);
+  err = sync(w, '2026-10-11 11:00');
+  check('no vuelve a aparecer', !err && !findOp(revisar(w), 7, '183283723424').length && rowsOf(w, 'Pagos').filter(r => r[8] === '183283723424').length === 1);
+  x = intentar(() => w.ctx.adminEsElMismo(PIN, '181809839545', t.duplicado.fila, { apodo: 'Colo', monto: 15000 }));
+  check('"Es el mismo" con un pago que ya tiene N° de Mercado Pago: error', x.e && /ya tiene un N°/.test(x.e.message), x.e && x.e.message);
+  x = intentar(() => w.ctx.adminAsignar(PIN, '182369302197', 'Flaco'));
+  check('la de Ricardo se asigna desde el panel', !x.e && rowsOf(w, 'Pagos').some(r => r[8] === '182369302197' && r[1] === 'Flaco'), x.e && x.e.message);
+}
+
+section('B3 "Buscar transferencias ahora" desde el panel');
+{
+  const w = mundoAdmin(basePayments().concat([pay({ id: 7301, created: '2026-10-10 18:00', payerId: ID.Juancho, cuit: '20301112223', amount: 15000 })]));
+  let x = intentar(() => w.ctx.adminSincronizar('000000'));
+  check('sin PIN no busca', x.e && /PIN/.test(x.e.message) && !rowsOf(w, 'Pagos').some(r => r[8] === '7301'));
+  x = intentar(() => w.ctx.adminSincronizar(PIN));
+  check('con PIN trae la transferencia y devuelve el panel', !x.e && /Búsqueda lista/.test(x.r.mensaje) && rowsOf(w, 'Pagos').some(r => r[8] === '7301') && x.r.admin && x.r.datos,
+    x.e ? x.e.stack : x.r.mensaje);
+}
+
+section('B4 editar integrante: apodo, cuentas y fecha de alta');
+{
+  const w = mundoAdmin();
+  w.run('asegurarEstructura_.bind(null, SpreadsheetApp.getActive())');
+  w.sheet('Integrantes').getRange(5, 10).setValue('444000123, 444000124');
+  let x = intentar(() => w.ctx.adminIntegrante(PIN, 'Colo'));
+  check('el detalle trae los datos para editar', !x.e && x.r.datos.cuentasMp.length === 2 && x.r.datos.cuentasMp[0].fin === '0123' && x.r.datos.alta === '', JSON.stringify(x.r && x.r.datos));
+  const pagosColo = rowsOf(w, 'Pagos').filter(r => r[1] === 'Colo').length;
+  x = intentar(() => w.ctx.adminEditarIntegrante(PIN, 'Colo', { apodo: 'Colorado', nombre: 'Pedro', apellido: 'Colombo', cuits: '20-12345678-9',
+    cvus: '0000003100000000000001', cuentasMp: ['444000124'], alta: '2026-10-20' }));
+  check('guarda sin error', !x.e, x.e && x.e.stack);
+  const f = w.sheet('Integrantes').rows(5)[0];
+  check('Integrantes: apodo, nombre, CUIT, CVU, la cuenta que queda y el alta', f[1] === 'Colorado' && f[2] === 'Pedro' && f[3] === 'Colombo' && f[5] === '20123456789' &&
+    f[6] === '0000003100000000000001' && f[9] === '444000124' && f[10] === '20/10/2026', JSON.stringify(f));
+  check('el apodo nuevo queda en sus pagos', pagosColo === 2 && rowsOf(w, 'Pagos').filter(r => r[1] === 'Colorado').length === 2 &&
+    !rowsOf(w, 'Pagos').some(r => r[1] === 'Colo') && /2 pagos/.test(x.r.mensaje), x.r && x.r.mensaje);
+  check('entró el 20: octubre es media cuota', x.r.datos.integrantes.find(m => m.apodo === 'Colorado').estados[0].medio);
+  const malos = [
+    [{ apodo: 'Juancho' }, /otro integrante/],
+    [{ apodo: 'Colorado', cuits: '20301112223' }, /ya está cargado para Juancho/],
+    [{ apodo: 'Colorado', cuits: '123' }, /11 números/],
+    [{ apodo: '=1+1' }, /apodo/],
+  ];
+  check('valida apodo repetido, CUIT de otro, CUIT corto y apodo raro', malos.every(([d, re]) => { const y = intentar(() => w.ctx.adminEditarIntegrante(PIN, 'Colorado', d)); return y.e && re.test(y.e.message); }));
+  x = intentar(() => w.ctx.adminBaja(PIN, 'Colorado', '2026-10'));
+  x = intentar(() => w.ctx.adminEditarIntegrante(PIN, 'Colorado', { apodo: 'Colorado', alta: '2026-11-02' }));
+  check('el alta no puede ser después de la baja', x.e && /después del último mes/.test(x.e.message), x.e && x.e.message);
+  x = intentar(() => w.ctx.adminBaja(PIN, 'Colorado', ''));
+  check('se deshace la baja', !x.e && !x.r.admin.integrantes.find(m => m.apodo === 'Colorado').baja);
+}
+
+section('B5 corregir y borrar valores, con vista previa');
+{
+  const w = mundoAdmin();
+  let x = intentar(() => w.ctx.adminEntrar(PIN));
+  const filas = x.r.filasValores;
+  check('el panel trae las filas de Valores', filas.length === 2 && filas[0].clave === '2026-10' && filas[0].cuota === 15000 && filas[1].clave === '2026-11' && filas[1].cuota === null, JSON.stringify(filas));
+  const oct = filas[0];
+  const cambio = { fila: oct.fila, esperado: oct.clave, desde: '2026-10', cuota: '16000', cancha: '120000' };
+  x = intentar(() => w.ctx.adminSimularValor(PIN, Object.assign({ modo: 'editar' }, cambio)));
+  const esperado = { Juancho: 3000, Flaco: 3000, Tano: 3000, Colo: 2000, Dieguito: 2000 };
+  check('vista previa: cada uno paga $1.000 más por cada mes vencido o ya pagado', !x.e && x.r.afectados.length === 5 &&
+    Object.keys(esperado).every(a => x.r.afectados.some(y => y.apodo === a && y.diferencia === esperado[a])), x.e ? x.e.stack : JSON.stringify(x.r.afectados));
+  check('cuotas necesarias con el valor corregido', x.r && x.r.necesarios === Math.ceil(120000 / 16000));
+  x = intentar(() => w.ctx.adminEditarValor(PIN, cambio));
+  check('guarda la corrección', !x.e && w.sheet('Valores').getRange(oct.fila, 2).getValue() === 16000, x.e && x.e.stack);
+  const nov = x.r.admin.filasValores.find(v => v.clave === '2026-11');
+  x = intentar(() => w.ctx.adminSimularValor(PIN, { modo: 'borrar', fila: nov.fila, esperado: nov.clave }));
+  check('vista previa de borrar la cancha de noviembre: nadie cambia', !x.e && x.r.afectados.length === 0 && x.r.necesarios === Math.ceil(120000 / 16000), x.e ? x.e.message : JSON.stringify(x.r));
+  x = intentar(() => w.ctx.adminBorrarValor(PIN, { fila: nov.fila, esperado: nov.clave }));
+  check('borra la fila', !x.e && w.sheet('Valores').rows(2).length === 1, x.e && x.e.message);
+  const oct2 = x.r.admin.filasValores[0];
+  x = intentar(() => w.ctx.adminBorrarValor(PIN, { fila: oct2.fila, esperado: oct2.clave }));
+  check('no deja el inicio de la temporada sin valores', x.e && /inicio de la temporada/.test(x.e.message), x.e && x.e.message);
+  x = intentar(() => w.ctx.adminEditarValor(PIN, { fila: oct2.fila, esperado: '2026-12', desde: '2026-10', cuota: '1', cancha: '1' }));
+  check('si la hoja cambió, no pisa nada', x.e && /cambió/.test(x.e.message));
+  x = intentar(() => w.ctx.adminEditarValor(PIN, { fila: oct2.fila, esperado: oct2.clave, desde: '2026-10', cuota: '', cancha: '' }));
+  check('sin montos: pide usar Borrar', x.e && /Borrar/.test(x.e.message));
+  x = intentar(() => w.ctx.adminNuevoValor(PIN, { tipo: 'cancha', monto: '150000', desde: '2026-12' }));
+  const dic = x.r.admin.filasValores.find(v => v.clave === '2026-12');
+  x = intentar(() => w.ctx.adminEditarValor(PIN, { fila: dic.fila, esperado: dic.clave, desde: '2026-10', cancha: '150000' }));
+  check('no deja dos valores para el mismo mes', x.e && /Ya hay un valor/.test(x.e.message), x.e && x.e.message);
+}
+
+section('B6 gastos: corregir y anular');
+{
+  const w = mundoAdmin();
+  let x = intentar(() => w.ctx.adminEntrar(PIN));
+  const g = x.r.gastos[0];
+  check('el gasto de cancha figura bloqueado (vino de Mercado Pago)', g && g.tipo === 'Cancha' && g.bloqueado, JSON.stringify(g));
+  x = intentar(() => w.ctx.adminEditarGasto(PIN, g.fila, { monto: g.monto, concepto: g.concepto }, { tipo: 'Cancha', concepto: 'Cancha de octubre', destinatario: 'Club', monto: '1', fecha: '2026-10-01' }));
+  const fg = rowsOf(w, 'Gastos')[0];
+  check('cambia concepto y destinatario, no monto ni fecha', !x.e && fg[2] === 'Cancha de octubre' && fg[5] === 'Club' && fg[3] === '120000' && fg[0] === '02/10/2026' &&
+    /Corregido: concepto, destinatario/.test(fg[7]), x.e ? x.e.message : JSON.stringify(fg));
+  check('la cancha sigue pagada', x.r.datos.cancha.pagada && x.r.datos.caja.gastado === 120000);
+  x = intentar(() => w.ctx.adminAnularGasto(PIN, g.fila, { monto: 120000, concepto: 'Cancha de octubre' }));
+  check('anulado: deja de restar y la cancha figura sin pagar', !x.e && x.r.datos.caja.gastado === 0 && !x.r.datos.cancha.pagada &&
+    rowsOf(w, 'Gastos')[0][1] === 'Anulado' && w.sheet('Gastos').raw(2, 1).line === 'line-through', x.e && x.e.message);
+  check('el público no ve el gasto anulado', x.r.datos.gastos.length === 0);
+  x = intentar(() => w.ctx.adminEditarGasto(PIN, g.fila, { monto: 120000, concepto: 'Cancha de octubre' }, { tipo: 'Cancha', concepto: 'Cancha de octubre', destinatario: 'Club' }));
+  check('se restaura eligiendo el tipo', !x.e && x.r.datos.caja.gastado === 120000 && rowsOf(w, 'Gastos')[0][1] === 'Cancha' && w.sheet('Gastos').raw(2, 1).line === 'none', x.e && x.e.message);
+  const hg = w.sheet('Gastos');
+  hg.getRange(3, 1, 1, 8).setValues([[w.mkDate(art('2026-10-05 00:00').getTime()), 'Equipamiento', 'Bochas', 30000, 'Fondo equipamiento', 'Deportes SA', '', 'Cargado desde la app']]);
+  x = intentar(() => w.ctx.adminEntrar(PIN));
+  const b = x.r.gastos.find(y => y.concepto === 'Bochas');
+  x = intentar(() => w.ctx.adminEditarGasto(PIN, b.fila, { monto: 30000, concepto: 'Bochas' }, { tipo: 'Otro', concepto: 'Bochas y conos', destinatario: 'Deportes SA', monto: '32000', fecha: '2026-10-06' }));
+  const f3 = hg.getRange(3, 1, 1, 8).getValues()[0];
+  check('un gasto cargado a mano cambia monto, fecha y tipo ("sale de" acompaña)', !x.e && f3[3] === 32000 && f3[1] === 'Otro' && f3[4] === 'Caja' &&
+    hg.display(3, 1) === '06/10/2026' && x.r.datos.caja.gastado === 152000, x.e ? x.e.message : JSON.stringify(f3));
+}
+
+section('B7 configuración y cambio de PIN desde el panel');
+{
+  const w = mundoAdmin();
+  let x = intentar(() => w.ctx.adminConfig(PIN, { saldoInicial: '25000', alias: 'caja.hockey.sj', vence: '12' }));
+  check('guarda saldo inicial, alias y vencimiento', !x.e && B(w, 'B6') === '25000' && B(w, 'B7') === 'caja.hockey.sj' && B(w, 'B10') === '12', x.e ? x.e.message : [B(w, 'B6'), B(w, 'B7'), B(w, 'B10')].join('|'));
+  check('la app pública los usa', x.r.datos.alias === 'caja.hockey.sj' && x.r.datos.caja.saldoInicial === 25000 && x.r.datos.cancha.vence === '12/10', JSON.stringify(x.r && x.r.datos.cancha));
+  check('el panel los muestra', x.r.admin.config.saldoInicial === 25000 && x.r.admin.config.alias === 'caja.hockey.sj' && x.r.admin.config.vence === 12);
+  const malos = [
+    [{ saldoInicial: '-5', alias: '', vence: '10' }, /saldo/],
+    [{ saldoInicial: '', alias: '', vence: '10' }, /saldo/],
+    [{ saldoInicial: '0', alias: 'mi alias!', vence: '10' }, /alias/],
+    [{ saldoInicial: '0', alias: '', vence: '31' }, /vencimiento/],
+  ];
+  check('valida saldo, alias y día', malos.every(([d, re]) => { const y = intentar(() => w.ctx.adminConfig(PIN, d)); return y.e && re.test(y.e.message); }));
+  x = intentar(() => w.ctx.adminCambiarPin(PIN, '111111', '654321', false));
+  check('PIN actual equivocado: error propio (la app no cierra el panel)', x.e && /PIN actual no es correcto/.test(x.e.message), x.e && x.e.message);
+  x = intentar(() => w.ctx.adminCambiarPin(PIN, PIN, '12', false));
+  check('PIN nuevo corto: error', x.e && /6 a 12/.test(x.e.message));
+  const tok = w.ctx.adminEntrar(PIN, true).token;
+  x = intentar(() => w.ctx.adminCambiarPin(tok, PIN, '654321', true));
+  check('cambia el PIN y da un código nuevo para este celular', !x.e && /^t:[0-9a-f]{64}$/.test(x.r.token), x.e && x.e.message);
+  check('el PIN viejo ya no sirve', /PIN incorrecto/.test(((intentar(() => w.ctx.adminEntrar(PIN)).e) || {}).message || ''));
+  check('el PIN nuevo sí', !intentar(() => w.ctx.adminEntrar('654321')).e);
+  check('el código viejo del celular ya no sirve', !!intentar(() => w.ctx.adminEntrar(tok)).e);
+  check('el código nuevo sí', !intentar(() => w.ctx.adminEntrar(x.r.token)).e);
 }
 
 section('A11 cualquier orden de archivos en el editor');
