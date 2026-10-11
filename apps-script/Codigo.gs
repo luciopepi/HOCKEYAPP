@@ -237,7 +237,9 @@ function procesarRecibidos_(ss, config, pagos, miId, desde, proc) {
   const yaCargados = clavesPagos_(hPagos);
   const integ = leerIntegrantes_(hInt);
   const cargados = leerDatos_(ss).pagos;
-  const usados = new Set(); // cada pago cargado se ofrece como duplicado de una sola transferencia
+  // Un pago cargado con el N° de una operación de Mercado Pago ya está vinculado: no puede ser duplicado de otra.
+  const idsMp = new Set(pagos.map(p => String(p.id)));
+  const vinculado = op => !!op && (idsMp.has(op) || proc.tiene(op));
 
   const filasPagos = [];
   const filasRevisar = [];
@@ -266,8 +268,9 @@ function procesarRecibidos_(ss, config, pagos, miId, desde, proc) {
       }
 
       if (p.status !== 'approved' || TIPOS_TRANSFERENCIA.indexOf(p.operation_type) === -1) return;
+      if (enPagos.has(id)) { proc.marcar(id); return; } // ya cargado (también a mano con su N°): queda vinculado
       const fecha = fechaPago_(p);
-      if (fecha < desde || enPagos.has(id) || yaVistos.has(id) || proc.tiene(id)) return;
+      if (fecha < desde || yaVistos.has(id) || proc.tiene(id)) return;
 
       const bruto = Number(p.transaction_amount) || 0;
       const monto = bruto - devuelto;
@@ -288,9 +291,10 @@ function procesarRecibidos_(ss, config, pagos, miId, desde, proc) {
 
       if (m) {
         const clave = claveDia_(m.apodo, monto, fecha);
-        if (yaCargados.has(clave)) {
+        const dup = posibleDuplicado_(cargados, monto, fecha, { apodo: m.apodo, vinculado: vinculado })[0];
+        if (dup || yaCargados.has(clave)) {
           filasRevisar.push(filaRevisar_(fecha, monto, medio, nombre, cuit, payerId, id,
-            'Posible duplicado: ' + m.apodo + ' ya tiene un pago igual ese día en Pagos.'));
+            dup ? textoDuplicado_(dup) : 'Posible duplicado: ' + m.apodo + ' ya tiene un pago igual ese día en Pagos.'));
         } else {
           const cuota = valorEn_(valores, 'cuota', primerDia_(soloDia_(fecha)));
           const esCuota = cuota > 0 && monto % cuota === 0;
@@ -311,11 +315,10 @@ function procesarRecibidos_(ss, config, pagos, miId, desde, proc) {
         }
         proc.marcar(id);
       } else if (monto >= MONTO_MINIMO_REVISAR && esMontoPosible_(valores, fecha, monto)) {
-        const dup = posibleDuplicado_(cargados, monto, fecha, usados);
-        if (dup) usados.add(dup.fila);
+        // Solo una transferencia sin datos de quien la envió (desde un banco) puede ser el pago de cualquiera.
+        const dup = esPropia ? posibleDuplicado_(cargados, monto, fecha, { vinculado: vinculado })[0] : null;
         filasRevisar.push(filaRevisar_(fecha, monto, medio, nombre, cuit, esPropia ? '' : payerId, id,
-          dup ? 'Posible duplicado: ' + dup.apodo + ' tiene un pago igual del ' +
-                Utilities.formatDate(dup.fecha, ZONA, 'dd/MM') + ' cargado sin N° de Mercado Pago.'
+          dup ? textoDuplicado_(dup)
             : esPropia ? 'Transferencia desde un banco: Mercado Pago no informa quién la envió.'
                        : 'No coincide con ningún integrante.'));
         proc.marcar(id);
@@ -348,20 +351,38 @@ function filaRevisar_(fecha, monto, medio, nombre, cuit, payerId, id, motivo) {
 }
 
 /**
- * Pago ya cargado que puede ser esta misma transferencia: mismo monto, un día de
- * diferencia como máximo, no es efectivo, no está anulado y no tiene N° de
- * operación de Mercado Pago (por ejemplo, se cargó con el número del comprobante del banco).
+ * Pagos ya cargados que pueden ser esta misma transferencia (decisión 32): de un mismo
+ * integrante y día, a un día de la transferencia como máximo, no en efectivo, no anulados y
+ * sin vincular a otra operación de Mercado Pago (por ejemplo, cargados con el número del
+ * comprobante del banco). Coinciden por monto en una fila o sumando las filas de ese día
+ * (un pago separado en Cuota y Deuda anterior). o.apodo: solo pagos de ese integrante.
+ * Devuelve las opciones de la más cercana a la más lejana: [{apodo, fecha, monto, filas}].
  */
-function posibleDuplicado_(pagos, monto, fecha, usados) {
+function posibleDuplicado_(pagos, monto, fecha, o) {
   const dia = soloDia_(fecha).getTime();
-  return pagos.find(p => p.monto === monto && p.medio !== 'Efectivo' && p.imputacion !== IMP.ANULADO &&
-    !esOpMercadoPago_(p.op) && !(usados && usados.has(p.fila)) &&
-    Math.abs(soloDia_(p.fecha).getTime() - dia) <= 26 * 3600 * 1000) || null;
+  const grupos = {};
+  pagos.forEach(p => {
+    if (p.medio === 'Efectivo' || p.imputacion === IMP.ANULADO || o.vinculado(p.op)) return;
+    if (o.apodo && p.apodo !== o.apodo) return;
+    const d = soloDia_(p.fecha).getTime();
+    if (Math.abs(d - dia) > 26 * 3600 * 1000) return;
+    const k = p.apodo + '|' + d;
+    (grupos[k] = grupos[k] || { distancia: Math.abs(d - dia), filas: [] }).filas.push(p);
+  });
+  const centavos = n => Math.round(n * 100);
+  const opciones = [];
+  Object.keys(grupos).forEach(k => {
+    const g = grupos[k];
+    const una = g.filas.find(p => centavos(p.monto) === centavos(monto));
+    const filas = una ? [una] : centavos(g.filas.reduce((s, p) => s + p.monto, 0)) === centavos(monto) ? g.filas : null;
+    if (filas) opciones.push({ distancia: g.distancia, apodo: filas[0].apodo, fecha: filas[0].fecha, monto: monto, filas: filas });
+  });
+  return opciones.sort((a, b) => a.distancia - b.distancia || a.filas[0].fila - b.filas[0].fila);
 }
 
-/** Los N° de operación de Mercado Pago son números largos; los de los bancos, no siempre. */
-function esOpMercadoPago_(op) {
-  return /^\d{10,}$/.test(String(op || ''));
+function textoDuplicado_(dup) {
+  return 'Posible duplicado: ' + dup.apodo + (dup.filas.length > 1 ? ' tiene pagos que suman lo mismo el ' : ' tiene un pago igual del ') +
+    Utilities.formatDate(dup.fecha, ZONA, 'dd/MM') + ', cargado sin N° de Mercado Pago.';
 }
 
 // ------------------------------------------------------------- enviados
@@ -373,14 +394,14 @@ function procesarEnviados_(ss, config, pagos, miId, desde, proc) {
   if (!idClub) {
     const club = detectarClub_(hGastos, miId);
     if (!club) {
-      return { cargados: 0, aviso: 'No se pudo detectar la cuenta del club: los pagos de cancha se cargan a mano.' };
+      return { cargados: 0, aviso: 'No se pudo detectar la cuenta del club: los pagos de cancha se cargan desde la app (Gasto).' };
     }
     // La búsqueda tiene que devolver el pago con el que se detectó el club.
     const dia = 24 * 3600 * 1000;
     const prueba = buscarPagos_({ 'payer.id': miId },
       new Date(club.fecha.getTime() - dia), new Date(club.fecha.getTime() + dia), 'date_created');
     if (!prueba.some(p => String(p.id) === club.pagoId)) {
-      return { cargados: 0, aviso: 'Mercado Pago no devuelve tus pagos enviados en la búsqueda: los pagos de cancha se cargan a mano.' };
+      return { cargados: 0, aviso: 'Mercado Pago no devuelve tus pagos enviados en la búsqueda: los pagos de cancha se cargan desde la app (Gasto).' };
     }
     idClub = club.id;
     config.getRange(CELDA.ID_CLUB).setNumberFormat('@').setValue(idClub);
@@ -403,7 +424,8 @@ function procesarEnviados_(ss, config, pagos, miId, desde, proc) {
     .filter(p => String(get_(p, 'payer.id')) === miId && idCobrador_(p) === idClub)
     .filter(p => {
       const id = String(p.id);
-      return fechaPago_(p) >= desde && !enGastos.has(id) && !enRevisar.has(id) && !proc.tiene(id);
+      if (enGastos.has(id)) { proc.marcar(id); return false; } // ya cargado: queda vinculado
+      return fechaPago_(p) >= desde && !enRevisar.has(id) && !proc.tiene(id);
     })
     .sort((a, b) => fechaPago_(a) - fechaPago_(b))
     .forEach(p => {
@@ -413,7 +435,7 @@ function procesarEnviados_(ss, config, pagos, miId, desde, proc) {
       const costo = valorEn_(valores, 'cancha', primerDia_(soloDia_(fecha)));
       if (!(costo > 0 && monto >= costo && monto <= costo * TOLERANCIA_CANCHA)) {
         filasRevisar.push([fecha, monto, 'Egreso', 'Transferencia Mercado Pago', 'Club Social y Deportivo Aberastain',
-          '', '', id, 'Pago al club por un monto distinto del costo de la cancha: cargalo a mano en Gastos si corresponde.']);
+          '', '', id, 'Pago al club por un monto distinto del costo de la cancha: cargalo como gasto si corresponde.']);
       } else if (yaCargados.has(claveDia_('Cancha', monto, fecha))) {
         dudosos.push(id);
       } else {
@@ -429,8 +451,7 @@ function procesarEnviados_(ss, config, pagos, miId, desde, proc) {
   agregarFilas_(hGastos, filas, COL_GASTOS.TOTAL, [7]);
   agregarFilas_(hRev, filasRevisar, COL_REVISAR.TOTAL, [5, 6, 7, 8]);
   if (dudosos.length) {
-    aviso = 'Pago de cancha posiblemente ya cargado a mano (op. ' + dudosos.join(', ') +
-      '): completá su N° de operación en Gastos.';
+    aviso = 'Pago de cancha que parece ya cargado (op. ' + dudosos.join(', ') + '): se tomó como el gasto de cancha de ese día.';
   }
   return { cargados: filas.length, aviso };
 }

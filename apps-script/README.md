@@ -47,7 +47,7 @@ Después de instalar, todo se hace desde la app (DISENO.md, decisión 30). El me
 
 | Pantalla | Para qué |
 |---|---|
-| Para revisar | Asignar transferencias sin dueño (se guarda la cuenta y las próximas entran solas) o marcarlas "No es de la caja". Si ya había un pago igual cargado a mano, avisa "Posible duplicado" y ofrece "Es el mismo". Clasificar los pagos que no son múltiplo de la cuota |
+| Para revisar | Asignar transferencias sin dueño (se guarda la cuenta y las próximas entran solas) o marcarlas "No es de la caja". Si ya había un pago cargado a mano sin N° de Mercado Pago, ofrece "Es el pago de…" (de cualquiera si vino de un banco; si trae la cuenta de un integrante, solo de ese integrante). Devoluciones de Mercado Pago (anular el pago) y pagos al club por otro monto (cargar como gasto). Clasificar los pagos que no son múltiplo de la cuota |
 | Buscar transferencias ahora | Trae las transferencias de Mercado Pago en el momento, sin esperar los 30 minutos |
 | Pago en efectivo | Cuota, otra cosa de la caja o algo que no es de la caja |
 | Gasto | Subís la imagen del comprobante de Mercado Pago; la app lee el N° de operación y trae monto, fecha y destinatario. Si no lo lee, lo escribís |
@@ -83,7 +83,7 @@ Cómo se calcula (DISENO.md, decisiones 10 a 12, 22 y 25):
 
 | Movimiento | Qué pasa |
 |---|---|
-| Transferencia de un integrante reconocido, múltiplo de la cuota | Pagos como "Cuota" |
+| Transferencia de un integrante reconocido, múltiplo de la cuota | Pagos como "Cuota". Si ya tiene un pago cargado a mano sin N° de Mercado Pago por ese monto (o filas de un día que suman ese monto), a un día como máximo: Por revisar como posible duplicado |
 | Transferencia de un integrante reconocido, otro monto | Pagos como "Por clasificar" (no suma hasta que la clasifiques) |
 | Transferencia sin reconocer (hasta 6 cuotas) o desde un banco | Por revisar. Si hay un pago del mismo monto cargado sin N° de Mercado Pago (un día de diferencia como máximo), avisa "Posible duplicado" |
 | Transferencia al club por el costo de la cancha (hasta 10% más) | Gastos como "Cancha" |
@@ -110,7 +110,7 @@ Cómo se calcula (DISENO.md, decisiones 10 a 12, 22 y 25):
 
 ## Pruebas
 
-`test/` simula Google Sheets, Drive y la API de Mercado Pago (258 casos):
+`test/` simula Google Sheets, Drive y la API de Mercado Pago (282 casos):
 
 ```
 TZ=America/Argentina/San_Juan node apps-script/test/run.js

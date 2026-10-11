@@ -110,7 +110,10 @@ function tablaValores_(valores) {
   }));
 }
 
-/** Ingresos de "Por revisar" (transferencias sin asignar). */
+/**
+ * Filas de "Por revisar": tipo "Ingreso" (transferencias sin asignar), "Devolución"
+ * (Mercado Pago devolvió un pago ya cargado; op = "R" + N°) y "Egreso" (pago al club por otro monto).
+ */
 function porRevisar_(ss) {
   const h = ss.getSheetByName(HOJA.REVISAR);
   const n = h ? h.getLastRow() - 1 : 0;
@@ -120,8 +123,9 @@ function porRevisar_(ss) {
   const lista = [];
   v.forEach((f, i) => {
     const op = normalizarOp_(f[COL_REVISAR.OPERACION - 1]);
-    if (String(f[2]) !== 'Ingreso' || !op) return;
-    lista.push({ fila: i + 2, op: op, fecha: t[i][0], cuando: f[0] instanceof Date ? f[0] : null, monto: Number(f[1]) || 0,
+    const tipo = String(f[2]).trim();
+    if (['Ingreso', 'Devolución', 'Egreso'].indexOf(tipo) === -1 || !op) return;
+    lista.push({ fila: i + 2, tipo: tipo, op: op, fecha: t[i][0], cuando: f[0] instanceof Date ? f[0] : null, monto: Number(f[1]) || 0,
       medio: String(f[3]), nombre: String(f[4]), cuit: soloDigitos_(f[5]), payerId: normalizarOp_(f[6]), motivo: String(f[8]) });
   });
   return lista;
@@ -164,18 +168,43 @@ function definirPin() {
 }
 
 function guardarPin_(props, pin) {
-  const sal = Utilities.getUuid();
-  props.setProperty(PIN_PROP, sal + ':' + hashPin_(sal, pin));
-  props.deleteProperty(FALLOS_PROP);
-  props.deleteProperty(TOKENS_PROP); // un PIN nuevo cierra la sesión de los celulares recordados
+  conLockPin_(() => {
+    const sal = Utilities.getUuid();
+    props.setProperty(PIN_PROP, sal + ':' + hashPin_(sal, pin));
+    props.deleteProperty(FALLOS_PROP);
+    props.deleteProperty(TOKENS_PROP); // un PIN nuevo cierra la sesión de los celulares recordados
+  });
 }
 
-/** Código para un celular que eligió "Recordar". Se guarda solo su hash. */
-function nuevoCelular_(props) {
-  const token = 't:' + (Utilities.getUuid() + Utilities.getUuid()).replace(/-/g, '').toLowerCase();
-  const lista = celulares_(props).concat([{ h: hashPin_('celular', token), desde: fechaTexto_(new Date()) }]);
-  props.setProperty(TOKENS_PROP, JSON.stringify(lista.slice(-MAX_CELULARES)));
-  return token;
+/** El PIN y la lista de celulares se leen y escriben de a uno por vez. */
+function conLockPin_(fn) {
+  const lock = LockService.getUserLock();
+  lock.waitLock(10000);
+  try {
+    return fn();
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** Sal del PIN vigente: cambia cada vez que se define un PIN nuevo. */
+function salPin_(props) {
+  const guardado = props.getProperty(PIN_PROP) || '';
+  return guardado.slice(0, guardado.indexOf(':'));
+}
+
+/**
+ * Código para un celular que eligió "Recordar". Se guarda solo su hash, atado al PIN con
+ * el que se entró: si el PIN cambió mientras tanto, no se entrega.
+ */
+function nuevoCelular_(props, sal) {
+  return conLockPin_(() => {
+    if (!sal || salPin_(props) !== sal) throw new Error('El PIN cambió. Entrá de nuevo con el PIN nuevo.');
+    const token = 't:' + (Utilities.getUuid() + Utilities.getUuid()).replace(/-/g, '').toLowerCase();
+    const lista = celulares_(props).concat([{ h: hashPin_('celular', token), desde: fechaTexto_(new Date()), sal: sal }]);
+    props.setProperty(TOKENS_PROP, JSON.stringify(lista.slice(-MAX_CELULARES)));
+    return token;
+  });
 }
 
 function hashPin_(sal, pin) {
@@ -187,7 +216,7 @@ function hashPin_(sal, pin) {
  * La credencial es el PIN o, en un celular que eligió "Recordar", un código largo
  * ("t:…") que se entrega al entrar. Los intentos fallidos de PIN bloquean el PIN
  * 15 minutos, pero no los celulares recordados: nadie puede dejar afuera al
- * administrador probando PIN equivocados.
+ * administrador probando PIN equivocados. Devuelve la sal del PIN vigente.
  */
 function verificarPin_(cred) {
   const props = PropertiesService.getScriptProperties();
@@ -195,9 +224,12 @@ function verificarPin_(cred) {
   if (!guardado) {
     throw new Error('Todavía no hay PIN. Definilo en la planilla: menú Caja Hockey → Definir PIN del panel de administrador.');
   }
+  const sal = guardado.slice(0, guardado.indexOf(':'));
   const c = String(cred == null ? '' : cred).trim();
   if (/^t:[0-9a-f]{64}$/.test(c)) {
-    if (celulares_(props).some(t => t.h === hashPin_('celular', c))) return;
+    const h = hashPin_('celular', c);
+    // Los códigos sin sal son anteriores a este control; los demás valen solo con el PIN con que se entregaron.
+    if (celulares_(props).some(t => t.h === h && (!t.sal || t.sal === sal))) return sal;
     throw new Error('PIN incorrecto.');
   }
   const lock = LockService.getUserLock(); // aparte del lock de la sincronización
@@ -217,6 +249,7 @@ function verificarPin_(cred) {
   } finally {
     lock.releaseLock();
   }
+  return sal;
 }
 
 function celulares_(props) {
@@ -256,16 +289,22 @@ function adminDatos_() {
   let url = '';
   try { url = ScriptApp.getService().getUrl() || ''; } catch (e) { url = ''; }
   const cfg = hoja_(ss, HOJA.CONFIG);
-  const usados = new Set();
-  const revisar = porRevisar_(ss).map(x => {
-    const dup = x.cuando ? posibleDuplicado_(d.pagos, x.monto, x.cuando, usados) : null;
-    if (dup) usados.add(dup.fila);
-    return {
-      op: x.op, fecha: x.fecha, monto: x.monto, medio: x.medio, nombre: x.nombre, motivo: x.motivo,
-      banco: !x.cuit && !x.payerId,
-      duplicado: dup ? { fila: dup.fila, apodo: dup.apodo, monto: dup.monto, fecha: fechaCorta_(dup.fecha) } : null,
-    };
-  });
+  const vinculado = vinculadoMp_(ss);
+  const integ = leerIntegrantes_(hoja_(ss, HOJA.INTEGRANTES));
+  const filas = porRevisar_(ss);
+  const revisar = filas.filter(x => x.tipo === 'Ingreso').map(x => ({
+    op: x.op, fecha: x.fecha, monto: x.monto, medio: x.medio, nombre: x.nombre, motivo: x.motivo,
+    banco: !x.cuit && !x.payerId,
+    duplicados: duplicadosDe_(d.pagos, x, integ, vinculado).slice(0, 3).map(dup => ({
+      apodo: dup.apodo, fecha: fechaCorta_(dup.fecha), monto: dup.monto,
+      filas: dup.filas.map(p => ({ fila: p.fila, apodo: p.apodo, monto: p.monto })),
+    })),
+  }));
+  const devoluciones = filas.filter(x => x.tipo === 'Devolución').map(x => ({
+    op: x.op, fecha: x.fecha, monto: Math.abs(x.monto),
+    pagos: d.pagos.filter(p => p.op === x.op.replace(/^R/, '')).map(p => ({ apodo: p.apodo, monto: p.monto, imputacion: p.imputacion })),
+  }));
+  const egresos = filas.filter(x => x.tipo === 'Egreso').map(x => ({ op: x.op, fecha: x.fecha, monto: x.monto, nombre: x.nombre, motivo: x.motivo }));
 
   return {
     hoy: Utilities.formatDate(new Date(), ZONA, 'yyyy-MM-dd'),
@@ -274,6 +313,8 @@ function adminDatos_() {
     canchaMes: est.cancha.costo,
     url: url,
     porRevisar: revisar.reverse().slice(0, 50),
+    devoluciones: devoluciones,
+    egresos: egresos,
     porClasificar: d.pagos.filter(p => p.imputacion === IMP.CLASIFICAR).reverse().map(p => ({
       fila: p.fila, apodo: p.apodo, fecha: fechaLarga_(p.fecha), monto: p.monto, medio: p.medio,
     })),
@@ -292,8 +333,8 @@ function adminDatos_() {
     mesesBaja: mesesSel(-3, 12),
     mesesValor: mesesSel(0, 12),
     mesesTemporada: mesesSel(-120, 12),
-    pagos: d.pagos.slice().sort((a, b) => b.fecha - a.fecha || b.fila - a.fila).slice(0, 300).map(pagoAdmin_),
-    gastos: d.gastos.slice().sort((a, b) => b.fecha - a.fecha || b.fila - a.fila).slice(0, 100).map(gastoAdmin_),
+    pagos: d.pagos.slice().sort((a, b) => b.fecha - a.fecha || b.fila - a.fila).slice(0, 300).map(p => pagoAdmin_(p, vinculado)),
+    gastos: d.gastos.slice().sort((a, b) => b.fecha - a.fecha || b.fila - a.fila).slice(0, 100).map(g => gastoAdmin_(g, vinculado)),
     config: {
       saldoInicial: d.saldoInicial,
       alias: cfg.getRange(CELDA.ALIAS).getDisplayValue(),
@@ -306,25 +347,46 @@ function isoDia_(d) {
   return Utilities.formatDate(d, ZONA, 'yyyy-MM-dd');
 }
 
-function pagoAdmin_(p) {
+function pagoAdmin_(p, vinculado) {
   return { fila: p.fila, fecha: fechaLarga_(p.fecha), iso: isoDia_(p.fecha), apodo: p.apodo, monto: p.monto,
-    imputacion: p.imputacion, medio: p.medio, bloqueado: pagoBloqueado_(p.op, p.notas), notas: p.notas.slice(0, 500) };
+    imputacion: p.imputacion, medio: p.medio, bloqueado: pagoBloqueado_(p.op, p.notas, vinculado), notas: p.notas.slice(0, 500) };
 }
 
-function gastoAdmin_(g) {
+function gastoAdmin_(g, vinculado) {
   return { fila: g.fila, fecha: fechaLarga_(g.fecha), iso: isoDia_(g.fecha), tipo: g.tipo, concepto: g.concepto,
-    monto: g.monto, destinatario: g.destinatario, anulado: g.anulado, bloqueado: gastoBloqueado_(g.op, g.notas),
+    monto: g.monto, destinatario: g.destinatario, anulado: g.anulado, bloqueado: gastoBloqueado_(g.op, g.notas, vinculado),
     notas: g.notas.slice(0, 500) };
 }
 
-/** Lo que vino de Mercado Pago no cambia de monto ni de fecha (decisiones 31 y 36). */
-function pagoBloqueado_(op, notas) {
-  const n = String(notas || '');
-  return esOpMercadoPago_(op) || n.indexOf(NOTA_AUTO) === 0 || n.indexOf(NOTA_ASIGNADA) === 0;
+/**
+ * ¿El N° de operación es de un movimiento de Mercado Pago ya visto? La sincronización
+ * anota en _procesados cada operación que encuentra, también las que ya estaban cargadas.
+ */
+function vinculadoMp_(ss) {
+  const proc = registroProcesados_(ss);
+  return op => !!op && proc.tiene(op);
 }
 
-function gastoBloqueado_(op, notas) {
-  return esOpMercadoPago_(op) || String(notas || '').indexOf(NOTA_AUTO) === 0;
+/** Lo que vino de Mercado Pago no cambia de monto ni de fecha (decisiones 31 y 36). */
+function pagoBloqueado_(op, notas, vinculado) {
+  const n = String(notas || '');
+  return vinculado(op) || n.indexOf(NOTA_AUTO) === 0 || n.indexOf(NOTA_ASIGNADA) === 0;
+}
+
+function gastoBloqueado_(op, notas, vinculado) {
+  return vinculado(op) || String(notas || '').indexOf(NOTA_AUTO) === 0;
+}
+
+/**
+ * Pagos cargados que pueden ser esta transferencia de "Por revisar". Una transferencia
+ * desde un banco (sin datos de quien envía) puede ser de cualquiera; una con CUIT o cuenta
+ * de un integrante, solo de ese integrante; una de alguien desconocido, de nadie.
+ */
+function duplicadosDe_(pagos, x, integ, vinculado) {
+  if (!x.cuando) return [];
+  if (!x.cuit && !x.payerId) return posibleDuplicado_(pagos, x.monto, x.cuando, { vinculado: vinculado });
+  const m = (x.payerId && integ.porIdMp[x.payerId]) || (x.cuit && integ.porCuit[x.cuit]);
+  return m ? posibleDuplicado_(pagos, x.monto, x.cuando, { apodo: m.apodo, vinculado: vinculado }) : [];
 }
 
 function respuestaAdmin_(mensaje, extra) {
@@ -335,14 +397,16 @@ function respuestaAdmin_(mensaje, extra) {
 
 /** Entra al panel. Con "recordar", devuelve un código para este celular en lugar de guardar el PIN. */
 function adminEntrar(cred, recordar) {
-  verificarPin_(cred);
+  const sal = verificarPin_(cred);
   const props = PropertiesService.getScriptProperties();
-  const datos = adminDatos_();
   if (!/^t:/.test(String(cred))) {
     props.deleteProperty(FALLOS_PROP);
-    if (recordar) datos.token = nuevoCelular_(props);
+    if (recordar) {
+      const token = nuevoCelular_(props, sal);
+      return Object.assign(adminDatos_(), { token: token });
+    }
   }
-  return datos;
+  return adminDatos_();
 }
 
 /** "Salir del panel" en un celular recordado: ese código deja de servir. */
@@ -351,7 +415,7 @@ function adminSalir(cred) {
   if (!/^t:[0-9a-f]{64}$/.test(c)) return true;
   const props = PropertiesService.getScriptProperties();
   const h = hashPin_('celular', c);
-  props.setProperty(TOKENS_PROP, JSON.stringify(celulares_(props).filter(t => t.h !== h)));
+  conLockPin_(() => props.setProperty(TOKENS_PROP, JSON.stringify(celulares_(props).filter(t => t.h !== h))));
   return true;
 }
 
@@ -361,8 +425,8 @@ function adminConfig(pin, d) {
   d = d || {};
   return conLock_(() => {
     const cfg = hoja_(SpreadsheetApp.getActive(), HOJA.CONFIG);
-    const saldo = Math.round(Number(String(d.saldoInicial == null ? '' : d.saldoInicial).replace(/\./g, '').replace(',', '.')) * 100) / 100;
-    if (String(d.saldoInicial).trim() === '' || !(saldo >= 0 && saldo <= MONTO_MAXIMO_APP)) throw new Error('Revisá el saldo inicial.');
+    const saldo = numeroApp_(d.saldoInicial);
+    if (!(saldo >= 0 && saldo <= 100000000)) throw new Error('Revisá el saldo inicial.');
     const alias = textoLibre_(d.alias, 40);
     if (alias && !/^[A-Za-z0-9.\-]{3,40}$/.test(alias)) throw new Error('El alias lleva letras, números, puntos o guiones.');
     const dia = Number(d.vence);
@@ -380,13 +444,19 @@ function adminConfig(pin, d) {
  */
 function adminCambiarPin(cred, actual, nuevo, recordar) {
   verificarPin_(cred);
+  const c = String(cred == null ? '' : cred).trim();
   const a = String(actual == null ? '' : actual).trim();
   if (!/^\d{6,12}$/.test(a)) throw new Error('Escribí tu PIN actual.');
-  try {
-    verificarPin_(a);
-  } catch (e) {
-    // Otro texto que "PIN incorrecto": la app no tiene que cerrar el panel por esto.
-    throw new Error(/PIN incorrecto/.test(e.message) ? 'El PIN actual no es correcto.' : e.message);
+  // Otro texto que "PIN incorrecto": la app no tiene que cerrar el panel por esto.
+  if (!/^t:/.test(c)) {
+    // Se entró con el PIN y ya se verificó: un error de tipeo no cuenta como intento fallido.
+    if (a !== c) throw new Error('El PIN actual no es correcto.');
+  } else {
+    try {
+      verificarPin_(a); // con un celular recordado, el PIN actual es la protección si alguien tiene el código
+    } catch (e) {
+      throw new Error(/PIN incorrecto/.test(e.message) ? 'El PIN actual no es correcto.' : e.message);
+    }
   }
   const n = String(nuevo == null ? '' : nuevo).trim();
   if (!/^\d{6,12}$/.test(n)) throw new Error('El PIN nuevo tiene que tener de 6 a 12 números.');
@@ -394,7 +464,7 @@ function adminCambiarPin(cred, actual, nuevo, recordar) {
   guardarPin_(props, n);
   return {
     mensaje: 'Listo: PIN cambiado. Los otros celulares recordados tienen que volver a entrar.',
-    token: recordar ? nuevoCelular_(props) : '',
+    token: recordar ? nuevoCelular_(props, salPin_(props)) : '',
   };
 }
 
@@ -412,7 +482,7 @@ function adminIntegrante(pin, apodo) {
     baja: x.baja ? nombreMes_(x.baja) : '',
     meses: x.estados.map((s, i) => ({ mes: nombreMes_(est.meses[i]), e: s.e, medio: s.medio, falta: s.falta }))
       .filter((s, i) => est.meses[i] <= est.mesActual && s.e !== 'nojuega'),
-    pagos: d.pagos.filter(p => p.apodo === x.apodo).sort((a, b) => b.fecha - a.fecha || b.fila - a.fila).map(pagoAdmin_),
+    pagos: d.pagos.filter(p => p.apodo === x.apodo).sort((a, b) => b.fecha - a.fecha || b.fila - a.fila).map(p => pagoAdmin_(p, vinculadoMp_(ss))),
     datos: {
       nombre: m.nombre, apellido: m.apellido, cuits: m.cuits.join(', '), cvus: m.cvus,
       cuentasMp: m.ids.map(id => ({ id: id, fin: id.slice(-4) })),
@@ -496,7 +566,7 @@ function adminEditarPago(pin, fila, esperado, d) {
     const { f, v } = filaPago_(h, fila, esperado);
     const antes = { apodo: String(v[1]).trim(), monto: Number(v[2]), imp: imputacion_(v[3]),
       fecha: v[0] instanceof Date ? soloDia_(v[0]) : null };
-    const bloqueado = pagoBloqueado_(normalizarOp_(v[COL_PAGOS.OPERACION - 1]), v[COL_PAGOS.TOTAL - 1]);
+    const bloqueado = pagoBloqueado_(normalizarOp_(v[COL_PAGOS.OPERACION - 1]), v[COL_PAGOS.TOTAL - 1], vinculadoMp_(ss));
     const m = miembroPorApodo_(leerMiembros_(hoja_(ss, HOJA.INTEGRANTES)), d.apodo);
     const validas = [IMP.CUOTA, IMP.DEUDA_ANTERIOR, IMP.OTRO_CAJA, IMP.NO_CAJA]
       .concat(antes.imp === IMP.CLASIFICAR ? [IMP.CLASIFICAR] : []);
@@ -555,7 +625,7 @@ function adminAsignar(pin, op, apodo) {
     const hInt = hoja_(ss, HOJA.INTEGRANTES);
     const miembros = leerMiembros_(hInt);
     const m = miembroPorApodo_(miembros, apodo);
-    const pendientes = porRevisar_(ss);
+    const pendientes = porRevisar_(ss).filter(x => x.tipo === 'Ingreso');
     const elegido = pendientes.find(x => x.op === normalizarOp_(op));
     if (!elegido) throw new Error('Esa transferencia ya no está en Por revisar. Actualizá la lista.');
 
@@ -594,15 +664,40 @@ function adminAsignar(pin, op, apodo) {
   });
 }
 
-/** Saca de "Por revisar" una transferencia que no es de la caja. No se vuelve a importar. */
+/**
+ * Saca un aviso de "Por revisar": una transferencia o un pago al club que no es de la caja,
+ * o una devolución que ya está corregida. No se vuelve a importar.
+ */
 function adminDescartar(pin, op) {
   verificarPin_(pin);
   return conLock_(() => {
     const ss = SpreadsheetApp.getActive();
     const x = porRevisar_(ss).find(y => y.op === normalizarOp_(op));
-    if (!x) throw new Error('Esa transferencia ya no está en Por revisar. Actualizá la lista.');
+    if (!x) throw new Error('Ese aviso ya no está en Por revisar. Actualizá la lista.');
     hoja_(ss, HOJA.REVISAR).deleteRow(x.fila);
-    return respuestaAdmin_('Listo: transferencia de ' + pesos_(x.monto) + ' marcada como que no es de la caja.');
+    return respuestaAdmin_(x.tipo === 'Devolución' ? 'Listo: aviso de devolución cerrado.'
+      : 'Listo: ' + (x.tipo === 'Egreso' ? 'pago' : 'transferencia') + ' de ' + pesos_(Math.abs(x.monto)) + ' marcado como que no es de la caja.');
+  });
+}
+
+/** Mercado Pago devolvió un pago ya cargado: lo anula (todas sus filas) y cierra el aviso. */
+function adminAnularDevuelto(pin, marca) {
+  verificarPin_(pin);
+  return conLock_(() => {
+    const ss = SpreadsheetApp.getActive();
+    const x = porRevisar_(ss).find(y => y.tipo === 'Devolución' && y.op === String(marca == null ? '' : marca).trim());
+    if (!x) throw new Error('Ese aviso ya no está en Por revisar. Actualizá la lista.');
+    const op = x.op.replace(/^R/, '');
+    const h = hoja_(ss, HOJA.PAGOS);
+    let anulados = 0;
+    leerDatos_(ss).pagos.filter(p => p.op === op && p.imputacion !== IMP.ANULADO).forEach(p => {
+      h.getRange(p.fila, 4).setValue(IMP.ANULADO);
+      h.getRange(p.fila, COL_PAGOS.TOTAL).setValue(notaCambio_(p.notas, 'Anulado: Mercado Pago lo devolvió (era ' + p.imputacion + ')'));
+      h.getRange(p.fila, 1, 1, COL_PAGOS.TOTAL).setFontLine('line-through');
+      anulados++;
+    });
+    hoja_(ss, HOJA.REVISAR).deleteRow(x.fila);
+    return respuestaAdmin_(anulados ? 'Listo: pago devuelto anulado. Ya no suma.' : 'Listo: ese pago ya no estaba en Pagos; cerré el aviso.');
   });
 }
 
@@ -611,29 +706,30 @@ function adminDescartar(pin, op) {
  * con el número del comprobante del banco). El pago queda con el N° de Mercado Pago
  * y no se suma dos veces (decisión 32).
  */
-function adminEsElMismo(pin, op, fila, esperado) {
+function adminEsElMismo(pin, op, esperados) {
   verificarPin_(pin);
   return conLock_(() => {
     const ss = SpreadsheetApp.getActive();
-    const x = porRevisar_(ss).find(y => y.op === normalizarOp_(op));
+    const x = porRevisar_(ss).find(y => y.tipo === 'Ingreso' && y.op === normalizarOp_(op));
     if (!x) throw new Error('Esa transferencia ya no está en Por revisar. Actualizá la lista.');
+    // Solo se acepta una de las opciones que calcula el servidor (mismas reglas que el aviso).
+    const opciones = duplicadosDe_(leerDatos_(ss).pagos, x, leerIntegrantes_(hoja_(ss, HOJA.INTEGRANTES)), vinculadoMp_(ss));
+    const pedidas = (Array.isArray(esperados) ? esperados : []).map(e => Number(e && e.fila)).sort((a, b) => a - b).join(',');
+    const dup = opciones.find(o => o.filas.map(p => p.fila).sort((a, b) => a - b).join(',') === pedidas);
+    if (!dup) throw new Error('La planilla cambió. Actualizá la lista y probá de nuevo.');
+    esperados.forEach(e => {
+      const p = dup.filas.find(q => q.fila === Number(e.fila));
+      if (p.apodo !== String(e.apodo) || p.monto !== Number(e.monto)) throw new Error('La planilla cambió. Actualizá la lista y probá de nuevo.');
+    });
     const hPagos = hoja_(ss, HOJA.PAGOS);
-    const { f, v } = filaPago_(hPagos, fila, esperado);
-    if (Number(v[2]) !== x.monto) throw new Error('Los montos no coinciden.');
-    if (imputacion_(v[3]) === IMP.ANULADO) throw new Error('Ese pago está anulado.');
-    const opViejo = normalizarOp_(v[COL_PAGOS.OPERACION - 1]);
-    if (esOpMercadoPago_(opViejo)) throw new Error('Ese pago ya tiene un N° de operación de Mercado Pago.');
-    hPagos.getRange(f, COL_PAGOS.OPERACION).setNumberFormat('@').setValue(x.op);
-    hPagos.getRange(f, COL_PAGOS.TOTAL).setValue(notaCambio_(v[COL_PAGOS.TOTAL - 1],
-      'Es la transferencia de Mercado Pago op. ' + x.op + (opViejo ? '; N° del comprobante: ' + opViejo : '')));
-
-    const hInt = hoja_(ss, HOJA.INTEGRANTES);
-    const miembros = leerMiembros_(hInt);
-    const m = miembros.find(y => y.apodo === String(v[1]).trim());
-    const aprendio = m ? aprenderCuenta_(hInt, miembros, m, x.cuit, x.payerId) : false;
+    dup.filas.forEach(p => {
+      hPagos.getRange(p.fila, COL_PAGOS.OPERACION).setNumberFormat('@').setValue(x.op);
+      hPagos.getRange(p.fila, COL_PAGOS.TOTAL).setValue(notaCambio_(p.notas,
+        'Es la transferencia de Mercado Pago op. ' + x.op + (p.op ? '; N° del comprobante: ' + p.op : '')));
+    });
+    // No se guarda ninguna cuenta: una transferencia de banco no la trae y la de un integrante ya es suya.
     hoja_(ss, HOJA.REVISAR).deleteRow(x.fila);
-    return respuestaAdmin_('Listo: era el pago de ' + String(v[1]).trim() + ' que ya estaba cargado. No se suma dos veces.' +
-      (aprendio ? ' Guardé su cuenta: los próximos pagos desde ahí se cargan solos.' : ''));
+    return respuestaAdmin_('Listo: era el pago de ' + dup.apodo + ' que ya estaba cargado. No se suma dos veces.');
   });
 }
 
@@ -733,7 +829,7 @@ function adminEditarIntegrante(pin, apodoActual, d) {
       throw new Error('Ya hay otro integrante con ese apodo.');
     }
     const cuits = [];
-    String(d.cuits == null ? '' : d.cuits).split(/[,;\n]+/).map(soloDigitos_).filter(Boolean).forEach(c => {
+    String(d.cuits == null ? '' : d.cuits).split(/[,;\s]+/).map(soloDigitos_).filter(Boolean).forEach(c => {
       if (c.length !== 11) throw new Error('Cada CUIT tiene que tener 11 números.');
       const otro = miembros.find(x => x !== m && x.cuits.indexOf(c) !== -1);
       if (otro) throw new Error('El CUIT ' + c + ' ya está cargado para ' + otro.apodo + '.');
@@ -981,6 +1077,8 @@ function adminGuardarGasto(pin, d) {
     const proc = registroProcesados_(ss);
     proc.marcar(id);
     proc.guardar();
+    const aviso = porRevisar_(ss).find(x => x.op === id);
+    if (aviso) hoja_(ss, HOJA.REVISAR).deleteRow(aviso.fila);
     return respuestaAdmin_('Listo: gasto de ' + pesos_(r.monto) + ' (' + concepto + ') guardado.');
   });
 }
@@ -1006,11 +1104,12 @@ function adminEditarGasto(pin, fila, esperado, d) {
   verificarPin_(pin);
   d = d || {};
   return conLock_(() => {
-    const h = hoja_(SpreadsheetApp.getActive(), HOJA.GASTOS);
+    const ss = SpreadsheetApp.getActive();
+    const h = hoja_(ss, HOJA.GASTOS);
     const { f, v } = filaGasto_(h, fila, esperado);
     const antes = { tipo: String(v[1]).trim(), concepto: String(v[2]).trim(), monto: Number(v[3]),
       destinatario: String(v[5]).trim(), fecha: v[0] instanceof Date ? soloDia_(v[0]) : null };
-    const bloqueado = gastoBloqueado_(normalizarOp_(v[COL_GASTOS.OPERACION - 1]), v[COL_GASTOS.TOTAL - 1]);
+    const bloqueado = gastoBloqueado_(normalizarOp_(v[COL_GASTOS.OPERACION - 1]), v[COL_GASTOS.TOTAL - 1], vinculadoMp_(ss));
     if (TIPOS_GASTO.indexOf(d.tipo) === -1) throw new Error('Elegí el tipo de gasto.');
     const concepto = textoLibre_(d.concepto, 80);
     if (!concepto) throw new Error('Escribí el concepto.');
@@ -1165,9 +1264,21 @@ function miembroPorApodo_(miembros, apodo) {
 }
 
 function montoValido_(v) {
-  const monto = Math.round(Number(String(v == null ? '' : v).replace(/\./g, '').replace(',', '.')) * 100) / 100;
+  const monto = numeroApp_(v);
   if (!(monto > 0 && monto <= MONTO_MAXIMO_APP)) throw new Error('Revisá el monto.');
   return monto;
+}
+
+/**
+ * Número escrito en la app. "262.5" (lo que manda un campo numérico) usa punto decimal;
+ * "15.000" o "1.234,50" (escrito a mano) usan punto de miles y coma decimal.
+ */
+function numeroApp_(v) {
+  if (typeof v === 'number') return Math.round(v * 100) / 100;
+  const s = String(v == null ? '' : v).trim();
+  if (!s) return NaN;
+  const n = /^-?\d+(\.\d{1,2})?$/.test(s) ? Number(s) : Number(s.replace(/\./g, '').replace(',', '.'));
+  return Math.round(n * 100) / 100;
 }
 
 function textoLibre_(v, max) {

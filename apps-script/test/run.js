@@ -909,7 +909,8 @@ section('A10 funciones del menú no se pueden usar desde la app');
 
 section('B1 pagos: anular, restaurar y corregir desde el panel');
 {
-  const w = mundoAdmin();
+  const w = mundoAdmin(basePayments().concat([pay({ id: 7401, created: '2026-10-10 18:00', payerId: ID.Juancho, cuit: '20301112223', amount: 15000 })]));
+  sync(w, '2026-10-10 19:00');
   const adel = r => r.admin.integrantes.find(m => m.apodo === 'Colo').adelantado;
   let x = intentar(() => w.ctx.adminCargarPago(PIN, { apodo: 'Colo', monto: '1', fecha: '2026-10-10', tipo: 'Cuota' }));
   const fila = w.sheet('Pagos').getLastRow();
@@ -930,10 +931,11 @@ section('B1 pagos: anular, restaurar y corregir desde el panel');
     w.sheet('Pagos').raw(fila, 1).line === 'none' && /restaurado como Cuota/.test(f2[9]) && /monto \$1 → \$15\.000/.test(f2[9]) && /Nota: era de 15\.000/.test(f2[9]), JSON.stringify(f2));
   check('vuelve a sumar con el monto corregido', adel(x.r) === antes - 1 + 15000, adel(x.r) + ' vs ' + antes);
   const mp = x.r.admin.pagos.find(q => q.apodo === 'Juancho' && q.bloqueado);
-  check('los pagos con N° de Mercado Pago figuran bloqueados', !!mp);
+  check('el pago que trajo la sincronización figura bloqueado', !!mp && rowsOf(w, 'Pagos')[mp.fila - 2][8] === '7401');
+  check('los cargados a mano sin operación vista en Mercado Pago no', x.r.admin.pagos.filter(q => q.bloqueado).length === 1);
   x = intentar(() => w.ctx.adminEditarPago(PIN, mp.fila, { apodo: 'Juancho', monto: mp.monto }, { apodo: 'Tano', monto: '999', fecha: '2026-10-01', imputacion: 'Otro de la caja' }));
   const f3 = w.sheet('Pagos').rows(mp.fila)[0];
-  check('Mercado Pago: cambia integrante e imputación, no monto ni fecha', !x.e && f3[1] === 'Tano' && f3[3] === 'Otro de la caja' && f3[2] === '15000' && f3[0] === mp.fecha, x.e ? x.e.message : JSON.stringify(f3));
+  check('Mercado Pago: cambia integrante e imputación, no monto ni fecha', !x.e && f3[1] === 'Tano' && f3[3] === 'Otro de la caja' && f3[2] === '15000' && f3[0].indexOf(mp.fecha) === 0, x.e ? x.e.message : JSON.stringify(f3));
   x = intentar(() => w.ctx.adminEditarPago(PIN, mp.fila, { apodo: 'Juancho', monto: 15000 }, { apodo: 'Juancho', monto: '15000', fecha: '2026-10-01', imputacion: 'Cuota' }));
   check('si la fila cambió, no pisa nada', x.e && /cambió/.test(x.e.message));
   x = intentar(() => w.ctx.adminEditarPago(PIN, mp.fila, { apodo: 'Tano', monto: 15000 }, { apodo: 'Tano', imputacion: 'Otro de la caja' }));
@@ -957,7 +959,10 @@ section('B2 primera búsqueda desde el inicio de la temporada y posibles duplica
   // Cargados a mano desde comprobantes del banco: con el número del banco, no el de Mercado Pago.
   const pg = w.sheet('Pagos');
   pg.getRange(pg.getLastRow() + 1, 1, 1, 10).setValues([[w.mkDate(art('2026-10-09 00:00').getTime()), 'Colo', 15000, 'Cuota', 'Transferencia bancaria', '', '', '', '86648591', '']]);
-  pg.getRange(pg.getLastRow() + 1, 1, 1, 10).setValues([[w.mkDate(art('2026-10-07 00:00').getTime()), 'Dieguito', 15000, 'Cuota', 'Transferencia bancaria', '', '', '', 'D4RO172VPM45GOJ12KJ3QE', '']]);
+  pg.getRange(pg.getLastRow() + 1, 1, 1, 10).setValues([[w.mkDate(art('2026-10-07 00:00').getTime()), 'Dieguito', 15000, 'Cuota', 'Transferencia bancaria', '', '', '', '000123456789', '']]);
+  // Y uno cargado a mano con el N° real de Mercado Pago (como los de Lokillo o Pela).
+  w.payments.push(pay({ id: 182814669876, created: '2026-10-09 10:00', payerId: ID.Tano, cuit: '23351234569', amount: 15000 }));
+  pg.getRange(pg.getLastRow() + 1, 1, 1, 10).setValues([[w.mkDate(art('2026-10-09 00:00').getTime()), 'Tano', 15000, 'Cuota', 'Transferencia Mercado Pago', '', '', '', '182814669876', '']]);
   // Como en la planilla real: la sincronización ya corría desde el 10/10.
   w.sheet('Config').getRange('B35').setValue(w.mkDate(art('2026-10-10 22:00').getTime()));
   let err = sync(w, '2026-10-11 10:00');
@@ -967,7 +972,8 @@ section('B2 primera búsqueda desde el inicio de la temporada y posibles duplica
   const rev = revisar(w);
   const motivo = id => (findOp(rev, 7, id)[0] || [])[8] || '';
   check('las 3 transferencias van a Por revisar', ['183283723424', '182369302197', '181809839545'].every(id => findOp(rev, 7, id).length === 1), JSON.stringify(rev));
-  check('las del banco avisan posible duplicado de Colo y de Dieguito', /Posible duplicado: Colo/.test(motivo('183283723424')) && /Posible duplicado: Dieguito/.test(motivo('181809839545')), motivo('183283723424') + ' | ' + motivo('181809839545'));
+  check('las del banco avisan posible duplicado de Colo y de Dieguito (aunque el N° del banco sea largo)', /Posible duplicado: Colo/.test(motivo('183283723424')) && /Posible duplicado: Dieguito/.test(motivo('181809839545')), motivo('183283723424') + ' | ' + motivo('181809839545'));
+  check('el cargado a mano con N° de Mercado Pago no se ofrece como duplicado y queda vinculado', !/Tano/.test(motivo('183283723424')) && rowsOf(w, 'Pagos').filter(r => r[8] === '182814669876').length === 1);
   check('la de Ricardo: no coincide con nadie', /No coincide/.test(motivo('182369302197')));
   check('ninguna entra sola a Pagos', !rowsOf(w, 'Pagos').some(r => ['183283723424', '182369302197', '181809839545'].includes(r[8])));
   w.fetches.length = 0;
@@ -975,18 +981,25 @@ section('B2 primera búsqueda desde el inicio de la temporada y posibles duplica
   check('la búsqueda siguiente ya es corta (2 días)', !err && busquedas().some(u => /begin_date=2026-10-09T10:00/.test(u)), busquedas()[0]);
   let x = intentar(() => w.ctx.adminEntrar(PIN));
   const t = x.r.porRevisar.find(y => y.op === '183283723424');
-  check('el panel muestra el posible duplicado', t && t.duplicado && t.duplicado.apodo === 'Colo' && t.duplicado.fecha === '09/10' && t.duplicado.monto === 15000, JSON.stringify(t));
-  check('la de Ricardo no tiene duplicado', !x.r.porRevisar.find(y => y.op === '182369302197').duplicado);
-  x = intentar(() => w.ctx.adminEsElMismo(PIN, t.op, t.duplicado.fila, { apodo: 'Colo', monto: 15000 }));
+  const dupColo = t && t.duplicados[0];
+  check('el panel muestra el posible duplicado (solo Colo)', t && t.duplicados.length === 1 && dupColo.apodo === 'Colo' && dupColo.fecha === '09/10' && dupColo.monto === 15000, JSON.stringify(t));
+  check('la de Ricardo (cuenta conocida de nadie) no ofrece duplicado', x.r.porRevisar.find(y => y.op === '182369302197').duplicados.length === 0);
+  check('el pago con N° de Mercado Pago visto en la búsqueda figura bloqueado', x.r.pagos.find(q => q.apodo === 'Tano' && rowsOf(w, 'Pagos')[q.fila - 2][8] === '182814669876').bloqueado);
+  const intAntes = JSON.stringify(w.sheet('Integrantes').rows(2));
+  x = intentar(() => w.ctx.adminEsElMismo(PIN, t.op, dupColo.filas));
   check('"Es el mismo" sin error', !x.e, x.e && x.e.stack);
   const colo = rowsOf(w, 'Pagos').find(r => r[1] === 'Colo' && r[8] === '183283723424');
   check('el pago de Colo queda con el N° de Mercado Pago y el del banco en la nota', colo && /86648591/.test(colo[9]), JSON.stringify(colo));
+  check('no guarda ninguna cuenta en Integrantes', JSON.stringify(w.sheet('Integrantes').rows(2)) === intAntes);
   check('sale de Por revisar y no se suma dos veces', !findOp(revisar(w), 7, '183283723424').length &&
     rowsOf(w, 'Pagos').filter(r => r[1] === 'Colo' && r[2] === '15000' && /^09\/10\/2026/.test(r[0])).length === 1);
   err = sync(w, '2026-10-11 11:00');
   check('no vuelve a aparecer', !err && !findOp(revisar(w), 7, '183283723424').length && rowsOf(w, 'Pagos').filter(r => r[8] === '183283723424').length === 1);
-  x = intentar(() => w.ctx.adminEsElMismo(PIN, '181809839545', t.duplicado.fila, { apodo: 'Colo', monto: 15000 }));
-  check('"Es el mismo" con un pago que ya tiene N° de Mercado Pago: error', x.e && /ya tiene un N°/.test(x.e.message), x.e && x.e.message);
+  x = intentar(() => w.ctx.adminEsElMismo(PIN, '181809839545', dupColo.filas));
+  check('"Es el mismo" con un pago que no es una de las opciones: error', x.e && /cambió/.test(x.e.message), x.e && x.e.message);
+  const filaDiego = rowsOf(w, 'Pagos').findIndex(r => r[8] === '000123456789') + 2;
+  x = intentar(() => w.ctx.adminEsElMismo(PIN, '182369302197', [{ fila: filaDiego, apodo: 'Dieguito', monto: 15000 }]));
+  check('la de Ricardo no se puede unir al pago de otro', x.e && /cambió/.test(x.e.message), x.e && x.e.message);
   x = intentar(() => w.ctx.adminAsignar(PIN, '182369302197', 'Flaco'));
   check('la de Ricardo se asigna desde el panel', !x.e && rowsOf(w, 'Pagos').some(r => r[8] === '182369302197' && r[1] === 'Flaco'), x.e && x.e.message);
 }
@@ -1068,6 +1081,7 @@ section('B5 corregir y borrar valores, con vista previa');
 section('B6 gastos: corregir y anular');
 {
   const w = mundoAdmin();
+  sync(w, '2026-10-10 19:00');
   let x = intentar(() => w.ctx.adminEntrar(PIN));
   const g = x.r.gastos[0];
   check('el gasto de cancha figura bloqueado (vino de Mercado Pago)', g && g.tipo === 'Cancha' && g.bloqueado, JSON.stringify(g));
@@ -1117,6 +1131,85 @@ section('B7 configuración y cambio de PIN desde el panel');
   check('el PIN nuevo sí', !intentar(() => w.ctx.adminEntrar('654321')).e);
   check('el código viejo del celular ya no sirve', !!intentar(() => w.ctx.adminEntrar(tok)).e);
   check('el código nuevo sí', !intentar(() => w.ctx.adminEntrar(x.r.token)).e);
+}
+
+section('B8 posibles duplicados de integrantes reconocidos: un día de diferencia y pagos separados');
+{
+  const w = mundoAdmin(basePayments().concat([
+    pay({ id: 7801, created: '2026-10-01 23:40', payerId: ID.Juancho, cuit: '20301112223', amount: 45000 }),
+    pay({ id: 7802, created: '2026-10-09 12:00', payerId: ID.Tano, cuit: '23351234569', amount: 21000 }),
+  ]));
+  const pg = w.sheet('Pagos');
+  const fila = (f, a, m, i, medio, op) => pg.getRange(pg.getLastRow() + 1, 1, 1, 10).setValues([[w.mkDate(art(f + ' 00:00').getTime()), a, m, i, medio, '', '', '', op, '']]);
+  fila('2026-10-02', 'Juancho', 45000, 'Cuota', 'Transferencia bancaria', '');
+  fila('2026-10-02', 'Colo', 45000, 'Cuota', 'Transferencia bancaria', '');
+  fila('2026-10-09', 'Tano', 15000, 'Cuota', 'Transferencia Mercado Pago', '');
+  fila('2026-10-09', 'Tano', 6000, 'Deuda anterior', 'Transferencia Mercado Pago', '');
+  const antes = rowsOf(w, 'Pagos').length;
+  let err = sync(w, '2026-10-10 19:00');
+  check('sync sin error', !err, err && err.stack);
+  check('ninguna se carga sola', rowsOf(w, 'Pagos').length === antes, JSON.stringify(rowsOf(w, 'Pagos').slice(antes)));
+  const mot = id => ((findOp(revisar(w), 7, id)[0]) || [])[8] || '';
+  check('Juancho: posible duplicado del día siguiente', /Posible duplicado: Juancho/.test(mot('7801')), mot('7801'));
+  check('Tano: pagos que suman lo mismo', /Posible duplicado: Tano tiene pagos que suman/.test(mot('7802')), mot('7802'));
+  let x = intentar(() => w.ctx.adminEntrar(PIN));
+  const j = x.r.porRevisar.find(y => y.op === '7801');
+  check('la de Juancho solo ofrece pagos de Juancho (no el de Colo)', j.duplicados.length === 1 && j.duplicados[0].apodo === 'Juancho', JSON.stringify(j.duplicados));
+  const t = x.r.porRevisar.find(y => y.op === '7802');
+  check('la de Tano ofrece sus dos filas juntas', t.duplicados.length === 1 && t.duplicados[0].filas.length === 2, JSON.stringify(t.duplicados));
+  x = intentar(() => w.ctx.adminEsElMismo(PIN, '7802', t.duplicados[0].filas));
+  check('"Es el mismo" marca las dos filas con el N° de Mercado Pago', !x.e && rowsOf(w, 'Pagos').filter(r => r[1] === 'Tano' && r[8] === '7802').length === 2 && rowsOf(w, 'Pagos').length === antes, x.e && x.e.message);
+  x = intentar(() => w.ctx.adminEsElMismo(PIN, '7801', [{ fila: t.duplicados[0].filas[0].fila, apodo: 'Tano', monto: 15000 }]));
+  check('no se puede unir con un pago de otro integrante', x.e && /cambió/.test(x.e.message));
+}
+
+section('B9 devoluciones y pagos al club por otro monto: se ven y se resuelven desde la app');
+{
+  const p = pay({ id: 7901, created: '2026-10-10 10:00', payerId: ID.Juancho, cuit: '20301112223', amount: 15000 });
+  const w = mundoAdmin(basePayments().concat([p, pay({ id: 7902, created: '2026-10-10 11:00', payerId: ME, collector: CLUB, amount: 50000 })]));
+  sync(w, '2026-10-10 12:00');
+  p.status = 'refunded'; p.transaction_amount_refunded = 15000; p.date_last_updated = mpDate('2026-10-10 13:00');
+  sync(w, '2026-10-10 14:00');
+  let x = intentar(() => w.ctx.adminEntrar(PIN));
+  check('el panel muestra la devolución con el pago al que corresponde', !x.e && x.r.devoluciones.length === 1 && x.r.devoluciones[0].op === 'R7901' &&
+    x.r.devoluciones[0].monto === 15000 && x.r.devoluciones[0].pagos[0].apodo === 'Juancho', JSON.stringify(x.r && x.r.devoluciones));
+  check('y el pago al club por otro monto', x.r.egresos.length === 1 && x.r.egresos[0].op === '7902' && x.r.egresos[0].monto === 50000, JSON.stringify(x.r.egresos));
+  check('los dos cuentan como pendientes en la app pública', w.ctx.datosApp_().pendientes === 2, w.ctx.datosApp_().pendientes);
+  x = intentar(() => w.ctx.adminAnularDevuelto(PIN, 'R7901'));
+  check('anular el pago devuelto: queda Anulado y se cierra el aviso', !x.e && rowsOf(w, 'Pagos').find(r => r[8] === '7901')[3] === 'Anulado' && x.r.admin.devoluciones.length === 0, x.e && x.e.message);
+  x = intentar(() => w.ctx.adminDescartar(PIN, '7902'));
+  check('el pago al club se marca como que no es de la caja', !x.e && x.r.admin.egresos.length === 0 && x.r.datos.pendientes === 0, x.e && x.e.message);
+}
+
+section('B10 montos con centavos desde los campos numéricos');
+{
+  const w = mundoAdmin();
+  check('"262.5" es 262,5; "15.000" es 15.000; "1.234,50" es 1234,5', w.ctx.montoValido_('262.5') === 262.5 && w.ctx.montoValido_('15.000') === 15000 && w.ctx.montoValido_('1.234,50') === 1234.5);
+  w.sheet('Gastos').getRange(3, 1, 1, 8).setValues([[w.mkDate(art('2026-10-05 00:00').getTime()), 'Otro', 'Retenciones de Mercado Pago', 262.5, 'Cuotas del mes', 'Mercado Pago (impuestos)', '', 'Diferencia entre lo transferido y lo acreditado.']]);
+  let x = intentar(() => w.ctx.adminEntrar(PIN));
+  const g = x.r.gastos.find(y => y.monto === 262.5);
+  x = intentar(() => w.ctx.adminEditarGasto(PIN, g.fila, { monto: 262.5, concepto: g.concepto }, { tipo: 'Otro', concepto: 'Retenciones MP', destinatario: g.destinatario, monto: String(g.monto), fecha: g.iso }));
+  check('cambiar solo el concepto no toca el monto', !x.e && w.sheet('Gastos').getRange(3, 4).getValue() === 262.5, x.e ? x.e.message : w.sheet('Gastos').getRange(3, 4).getValue());
+  x = intentar(() => w.ctx.adminConfig(PIN, { saldoInicial: '23456.78', alias: '', vence: '10' }));
+  check('saldo inicial con centavos', !x.e && w.sheet('Config').getRange('B6').getValue() === 23456.78, x.e ? x.e.message : w.sheet('Config').getRange('B6').getValue());
+}
+
+section('B11 PIN: los códigos de celular quedan atados al PIN con el que se entró');
+{
+  const w = mundoAdmin();
+  const props = w.ctx.PropertiesService.getScriptProperties();
+  const salViejo = w.ctx.salPin_(props);
+  w.ctx.adminCambiarPin(PIN, PIN, '654321', false);
+  let x = intentar(() => w.ctx.nuevoCelular_(props, salViejo));
+  check('un código pedido con el PIN viejo no se entrega después del cambio', x.e && /El PIN cambió/.test(x.e.message), x.e && x.e.message);
+  // Un código que se coló en la lista con la sal vieja no sirve.
+  const tok = 't:' + 'a'.repeat(64);
+  props.setProperty('ADMIN_CELULARES', JSON.stringify([{ h: w.ctx.hashPin_('celular', tok), desde: '', sal: salViejo }]));
+  check('un código con la sal vieja no entra', !!intentar(() => w.ctx.adminEntrar(tok)).e);
+  const fallos = () => JSON.parse(props.getProperty('ADMIN_FALLOS') || '{"n":0}').n;
+  const n0 = fallos();
+  x = intentar(() => w.ctx.adminCambiarPin('654321', '654320', '111222', false));
+  check('equivocarse en "PIN actual" con sesión de PIN no suma intentos fallidos', x.e && /no es correcto/.test(x.e.message) && fallos() === n0, fallos() + ' vs ' + n0);
 }
 
 section('A11 cualquier orden de archivos en el editor');
