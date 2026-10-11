@@ -56,6 +56,7 @@ const MONTO_MINIMO_REVISAR = 1000;
 const TOLERANCIA_CANCHA = 1.10; // admite hasta 10% de recargo por mora
 const NOTA_AUTO = 'Cargado automáticamente desde Mercado Pago';
 const PROP_BUSQUEDA = 'BUSQUEDA_COMPLETA'; // mes de inicio ya revisado completo
+const PROP_CUENTAS = 'CUENTAS_MP';        // ID de Mercado Pago → CUIT con el que se aprendió
 const COLOR_MANUAL = '#0000FF';
 const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio',
   'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
@@ -308,7 +309,7 @@ function procesarRecibidos_(ss, config, pagos, miId, desde, proc) {
             opsRetenidas.push(id);
           }
           if (!esPropia && payerId && !m.idMp) {
-            idsAprendidos.push([m.fila, payerId]);
+            idsAprendidos.push([m.fila, payerId, cuit]);
             m.idMp = payerId;
             integ.porIdMp[payerId] = m;
           }
@@ -328,8 +329,9 @@ function procesarRecibidos_(ss, config, pagos, miId, desde, proc) {
 
   agregarFilas_(hPagos, filasPagos, COL_PAGOS.TOTAL, [6, 7, 8, 9]);
   agregarFilas_(hRev, filasRevisar, COL_REVISAR.TOTAL, [5, 6, 7, 8]);
-  idsAprendidos.forEach(([fila, idMp]) => {
+  idsAprendidos.forEach(([fila, idMp, cuitMp]) => {
     hInt.getRange(fila, COL_INT.ID_MP).setNumberFormat('@').setValue(idMp);
+    anotarCuentaMp_(idMp, cuitMp);
   });
   if (retenido > 0) {
     agregarFilas_(hoja_(ss, HOJA.GASTOS), [[soloDia_(new Date()), 'Otro', 'Retenciones de Mercado Pago',
@@ -656,6 +658,26 @@ function leerMiembros_(h) {
       ultimoMes: f[COL_INT.ULTIMO - 1] instanceof Date ? f[COL_INT.ULTIMO - 1] : null });
   });
   return lista;
+}
+
+/**
+ * CUIT con el que se aprendió cada cuenta de Mercado Pago: si el administrador quita
+ * la cuenta de un integrante, también se quita ese CUIT (si no, la cuenta se vuelve a reconocer).
+ */
+function cuentasMp_() {
+  try {
+    return JSON.parse(PropertiesService.getScriptProperties().getProperty(PROP_CUENTAS) || '{}') || {};
+  } catch (e) {
+    return {};
+  }
+}
+
+function anotarCuentaMp_(payerId, cuit) {
+  if (!payerId || !cuit) return;
+  const c = cuentasMp_();
+  if (c[payerId] === cuit) return;
+  c[payerId] = cuit;
+  PropertiesService.getScriptProperties().setProperty(PROP_CUENTAS, JSON.stringify(c));
 }
 
 /** "20-29621474-5, 27123456789" → ['20296214745', '27123456789'] */

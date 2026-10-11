@@ -1212,6 +1212,57 @@ section('B11 PIN: los códigos de celular quedan atados al PIN con el que se ent
   check('equivocarse en "PIN actual" con sesión de PIN no suma intentos fallidos', x.e && /no es correcto/.test(x.e.message) && fallos() === n0, fallos() + ' vs ' + n0);
 }
 
+section('B12 cuentas aprendidas: quitar una cuenta saca su CUIT; no se aprende la cuenta de otro integrante');
+{
+  const OTRA = 444000888;
+  const w = mundoAdmin(basePayments().concat([
+    pay({ id: 8201, created: '2026-10-10 10:00', payerId: OTRA, cuit: '20111111112', amount: 15000, first: 'Ricardo' }),
+  ]));
+  sync(w, '2026-10-10 11:00');
+  let x = intentar(() => w.ctx.adminAsignar(PIN, '8201', 'Colo'));
+  check('asigna y aprende CUIT y cuenta', !x.e && /Guardé su cuenta/.test(x.r.mensaje), x.e && x.e.message);
+  x = intentar(() => w.ctx.adminIntegrante(PIN, 'Colo'));
+  check('el detalle muestra la cuenta con su CUIT', !x.e && x.r.datos.cuentasMp.length === 1 && x.r.datos.cuentasMp[0].cuit === '20111111112', JSON.stringify(x.r && x.r.datos));
+  x = intentar(() => w.ctx.adminEditarIntegrante(PIN, 'Colo', { apodo: 'Colo', cuits: x.r.datos.cuits, cvus: '', cuentasMp: [] }));
+  const colo = w.sheet('Integrantes').rows(5)[0];
+  check('destildar la cuenta saca también su CUIT', !x.e && colo[5] === '' && colo[9] === '' && /su CUIT/.test(x.r.mensaje), x.e ? x.e.message : JSON.stringify(colo));
+  w.payments.push(pay({ id: 8202, created: '2026-10-10 12:00', payerId: OTRA, cuit: '20111111112', amount: 15000 }));
+  sync(w, '2026-10-10 13:00');
+  check('la próxima transferencia de esa cuenta va a Para revisar', findOp(revisar(w), 7, 8202).length === 1 && !rowsOf(w, 'Pagos').some(r => r[8] === '8202'));
+  // Transferencia de la cuenta de Juancho (pagó por otro) asignada a Tano: Tano no aprende nada.
+  const hr = w.sheet('Por revisar');
+  hr.getRange(hr.getLastRow() + 1, 1, 1, 9).setValues([[w.mkDate(art('2026-10-10 14:00').getTime()), 15000, 'Ingreso', 'Transferencia Mercado Pago', 'Juan Pérez', '20301112223', '333000001', '8203', 'Posible duplicado: Juancho ya tiene un pago igual ese día en Pagos.']]);
+  const tanoAntes = JSON.stringify(w.sheet('Integrantes').rows(4)[0]);
+  x = intentar(() => w.ctx.adminAsignar(PIN, '8203', 'Tano'));
+  check('asignar la transferencia de la cuenta de otro integrante no le guarda esa cuenta', !x.e && JSON.stringify(w.sheet('Integrantes').rows(4)[0]) === tanoAntes, x.e ? x.e.message : JSON.stringify(w.sheet('Integrantes').rows(4)[0]));
+}
+
+section('B13 integrante agregado por error: "No juega esta temporada"');
+{
+  const w = mundoAdmin();
+  let x = intentar(() => w.ctx.adminAgregarIntegrante(PIN, { apodo: 'Nuevo', alta: '2026-10-10' }));
+  check('aparece debiendo', !x.e && x.r.datos.integrantes.some(m => m.apodo === 'Nuevo' && m.cuotasDebe === 1));
+  const opcion = x.r.admin.mesesBaja[0];
+  check('la primera opción de baja es "No juega esta temporada"', opcion.texto === 'No juega esta temporada' && opcion.clave === '2026-09', JSON.stringify(opcion));
+  x = intentar(() => w.ctx.adminBaja(PIN, 'Nuevo', opcion.clave));
+  check('deja de figurar en la planilla pública y no debe nada', !x.e && !x.r.datos.integrantes.some(m => m.apodo === 'Nuevo') &&
+    x.r.admin.integrantes.find(m => m.apodo === 'Nuevo').deuda === 0 && x.r.admin.integrantes.find(m => m.apodo === 'Nuevo').noJuega, x.e && x.e.message);
+  x = intentar(() => w.ctx.adminEditarIntegrante(PIN, 'Nuevo', { apodo: 'Nuevo', alta: '2026-10-10' }));
+  check('se le pueden editar los datos igual', !x.e, x.e && x.e.message);
+}
+
+section('B14 gastos: una transferencia recibida nunca se toma como gasto; CUIT con espacios');
+{
+  const w = mundoAdmin(basePayments().concat([pay({ id: 184000008401, created: '2026-10-10 10:00', payerId: ME, amount: 15000, ptype: 'bank_transfer', pmethod: 'cvu' })]));
+  sync(w, '2026-10-10 11:00');
+  let x = intentar(() => w.ctx.adminBuscarOperacion(PIN, '184000008401'));
+  check('buscar una transferencia de banco recibida: "es un cobro"', x.e && /cobro/.test(x.e.message), x.e ? x.e.message : JSON.stringify(x.r));
+  x = intentar(() => w.ctx.adminGuardarGasto(PIN, { op: '184000008401', tipo: 'Otro', concepto: 'error' }));
+  check('no se guarda y sigue en Por revisar', x.e && findOp(revisar(w), 7, '184000008401').length === 1);
+  x = intentar(() => w.ctx.adminEditarIntegrante(PIN, 'Colo', { apodo: 'Colo', cuits: '20 12345678 9' }));
+  check('acepta un CUIT escrito con espacios', !x.e && w.sheet('Integrantes').rows(5)[0][5] === '20123456789', x.e ? x.e.message : w.sheet('Integrantes').rows(5)[0][5]);
+}
+
 section('A11 cualquier orden de archivos en el editor');
 {
   const archivos = ['Codigo.gs', 'Calculo.gs', 'Web.gs'];

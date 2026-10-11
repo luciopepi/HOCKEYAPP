@@ -322,7 +322,7 @@ function adminDatos_() {
       const m = porMiembro[x.apodo] || { cuits: [], ids: [] };
       return {
         apodo: x.apodo, deuda: x.deuda, adelantado: x.adelantado, cuotasDebe: x.cuotasDebe, auto: x.auto,
-        baja: x.baja ? nombreMes_(x.baja) : '', alta: fechaLarga_(x.alta), hasta: x.hasta ? nombreMes_(x.hasta) : '',
+        baja: x.baja ? nombreMes_(x.baja) : '', noJuega: !!x.baja && x.baja < d.inicio, alta: fechaLarga_(x.alta), hasta: x.hasta ? nombreMes_(x.hasta) : '',
         cuentas: m.cuits.length + m.ids.length,
       };
     }),
@@ -330,7 +330,7 @@ function adminDatos_() {
     filasValores: filasValores_(ss).map(v => ({ fila: v.fila, clave: claveMes_(v.desde), texto: nombreMes_(v.desde),
       cuota: v.cuota, cancha: v.cancha })),
     mesActual: claveMes_(est.mesActual),
-    mesesBaja: mesesSel(-3, 12),
+    mesesBaja: [{ clave: claveMes_(sumarMeses_(d.inicio, -1)), texto: 'No juega esta temporada' }].concat(mesesSel(-3, 12)),
     mesesValor: mesesSel(0, 12),
     mesesTemporada: mesesSel(-120, 12),
     pagos: d.pagos.slice().sort((a, b) => b.fecha - a.fecha || b.fila - a.fila).slice(0, 300).map(p => pagoAdmin_(p, vinculado)),
@@ -485,7 +485,7 @@ function adminIntegrante(pin, apodo) {
     pagos: d.pagos.filter(p => p.apodo === x.apodo).sort((a, b) => b.fecha - a.fecha || b.fila - a.fila).map(p => pagoAdmin_(p, vinculadoMp_(ss))),
     datos: {
       nombre: m.nombre, apellido: m.apellido, cuits: m.cuits.join(', '), cvus: m.cvus,
-      cuentasMp: m.ids.map(id => ({ id: id, fin: id.slice(-4) })),
+      cuentasMp: m.ids.map(id => ({ id: id, fin: id.slice(-4), cuit: m.cuits.indexOf(cuentasMp_()[id]) !== -1 ? cuentasMp_()[id] : '' })),
       alta: m.alta ? isoDia_(m.alta) : '',
     },
   };
@@ -745,7 +745,9 @@ function adminSincronizar(pin) {
 function aprenderCuenta_(hInt, miembros, m, cuit, payerId) {
   let aprendio = false;
   const deOtro = (campo, valor) => miembros.some(x => x !== m && x[campo].indexOf(valor) !== -1);
-  if (cuit && m.cuits.indexOf(cuit) === -1 && !deOtro('cuits', cuit)) {
+  // La transferencia es de la cuenta de otro integrante (pagó por alguien más): no se aprende nada.
+  if (cuit && deOtro('cuits', cuit)) return false;
+  if (cuit && m.cuits.indexOf(cuit) === -1) {
     m.cuits.push(cuit);
     hInt.getRange(m.fila, COL_INT.CUIT).setNumberFormat('@').setValue(m.cuits.join(', '));
     aprendio = true;
@@ -755,6 +757,7 @@ function aprenderCuenta_(hInt, miembros, m, cuit, payerId) {
     hInt.getRange(m.fila, COL_INT.ID_MP).setNumberFormat('@').setValue(m.ids.join(', '));
     aprendio = true;
   }
+  if (payerId && m.ids.indexOf(payerId) !== -1) anotarCuentaMp_(payerId, cuit);
   return aprendio;
 }
 
@@ -804,6 +807,12 @@ function adminBaja(pin, apodo, ultimo) {
       return respuestaAdmin_('Listo: ' + m.apodo + ' vuelve a estar activo.');
     }
     const mes = mesApp_(ultimo);
+    const inicio = inicioBusqueda_(hoja_(ss, HOJA.CONFIG));
+    if (mes < inicio) {
+      // Agregado por error o al final no se sumó: no figura en ningún mes de la temporada.
+      hInt.getRange(m.fila, COL_INT.ULTIMO).setNumberFormat('mmm yyyy').setValue(sumarMeses_(inicio, -1));
+      return respuestaAdmin_('Listo: ' + m.apodo + ' no juega esta temporada. Ya no figura en la planilla.');
+    }
     if (m.alta && mes < primerDia_(m.alta)) throw new Error('El último mes no puede ser anterior al alta.');
     hInt.getRange(m.fila, COL_INT.ULTIMO).setNumberFormat('mmm yyyy').setValue(mes);
     return respuestaAdmin_('Listo: ' + m.apodo + ' juega hasta ' + nombreMes_(mes) +
@@ -828,18 +837,22 @@ function adminEditarIntegrante(pin, apodoActual, d) {
     if (miembros.some(x => x !== m && x.apodo.toLowerCase() === apodo.toLowerCase())) {
       throw new Error('Ya hay otro integrante con ese apodo.');
     }
+    const pares = cuentasMp_();
+    const mantener = (Array.isArray(d.cuentasMp) ? d.cuentasMp : []).map(normalizarOp_);
+    const ids = m.ids.filter(id => mantener.indexOf(id) !== -1);
+    const quitadas = m.ids.filter(id => mantener.indexOf(id) === -1);
+    const cuitsQuitados = quitadas.map(id => pares[id]).filter(Boolean);
     const cuits = [];
-    String(d.cuits == null ? '' : d.cuits).split(/[,;\s]+/).map(soloDigitos_).filter(Boolean).forEach(c => {
+    String(d.cuits == null ? '' : d.cuits).split(/[,;\n]+/).map(soloDigitos_).filter(c => c && cuitsQuitados.indexOf(c) === -1).forEach(c => {
       if (c.length !== 11) throw new Error('Cada CUIT tiene que tener 11 números.');
       const otro = miembros.find(x => x !== m && x.cuits.indexOf(c) !== -1);
       if (otro) throw new Error('El CUIT ' + c + ' ya está cargado para ' + otro.apodo + '.');
       if (cuits.indexOf(c) === -1) cuits.push(c);
     });
     const cvus = String(d.cvus == null ? '' : d.cvus).split(/[,;\n]+/).map(t => textoLibre_(t, 60)).filter(Boolean);
-    const mantener = (Array.isArray(d.cuentasMp) ? d.cuentasMp : []).map(normalizarOp_);
-    const ids = m.ids.filter(id => mantener.indexOf(id) !== -1);
     const alta = String(d.alta || '').trim() ? fechaApp_(d.alta, true) : '';
-    if (alta && m.ultimoMes && primerDia_(alta) > primerDia_(m.ultimoMes)) {
+    const noJuega = m.ultimoMes && primerDia_(m.ultimoMes) < inicioBusqueda_(hoja_(ss, HOJA.CONFIG));
+    if (alta && m.ultimoMes && !noJuega && primerDia_(alta) > primerDia_(m.ultimoMes)) {
       throw new Error('La fecha de alta no puede ser después del último mes que juega.');
     }
 
@@ -848,6 +861,10 @@ function adminEditarIntegrante(pin, apodoActual, d) {
     hInt.getRange(m.fila, COL_INT.CUIT, 1, 2).setNumberFormat('@').setValues([[cuits.join(', '), texto_(cvus.join(', '))]]);
     hInt.getRange(m.fila, COL_INT.ID_MP).setNumberFormat('@').setValue(ids.join(', '));
     hInt.getRange(m.fila, COL_INT.ALTA).setNumberFormat('dd/mm/yyyy').setValue(alta);
+    if (quitadas.length) {
+      quitadas.forEach(id => { delete pares[id]; });
+      PropertiesService.getScriptProperties().setProperty(PROP_CUENTAS, JSON.stringify(pares));
+    }
 
     let renombrados = 0;
     if (apodo !== m.apodo) {
@@ -860,6 +877,7 @@ function adminEditarIntegrante(pin, apodoActual, d) {
       }
     }
     return respuestaAdmin_('Listo: datos de ' + apodo + ' guardados.' +
+      (cuitsQuitados.length ? ' Saqué ' + (quitadas.length === 1 ? 'la cuenta y su CUIT' : 'las cuentas y sus CUIT') + ': sus transferencias van a ir a "Para revisar".' : '') +
       (renombrados ? ' El apodo nuevo quedó en ' + (renombrados === 1 ? 'su pago.' : 'sus ' + renombrados + ' pagos.') : ''),
       { apodo: apodo });
   });
@@ -1077,7 +1095,7 @@ function adminGuardarGasto(pin, d) {
     const proc = registroProcesados_(ss);
     proc.marcar(id);
     proc.guardar();
-    const aviso = porRevisar_(ss).find(x => x.op === id);
+    const aviso = porRevisar_(ss).find(x => x.tipo === 'Egreso' && x.op === id);
     if (aviso) hoja_(ss, HOJA.REVISAR).deleteRow(aviso.fila);
     return respuestaAdmin_('Listo: gasto de ' + pesos_(r.monto) + ' (' + concepto + ') guardado.');
   });
@@ -1163,7 +1181,8 @@ function buscarPago_(id) {
 /** Datos de un pago tuyo (un gasto). Un cobro no se acepta como gasto. */
 function resumenGasto_(p, miId) {
   if (p.status !== 'approved') throw new Error('Esa operación no está aprobada en Mercado Pago.');
-  if (String(get_(p, 'payer.id')) !== miId) throw new Error('Esa operación es un cobro, no un pago tuyo.');
+  // Las transferencias desde bancos que recibís también figuran con vos como pagador.
+  if (String(get_(p, 'payer.id')) !== miId || idCobrador_(p) === miId) throw new Error('Esa operación es un cobro, no un pago tuyo.');
   return {
     fecha: fechaLarga_(fechaPago_(p)),
     monto: Number(p.transaction_amount) || 0,

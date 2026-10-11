@@ -517,15 +517,22 @@ function vRevisar() {
       '<button class="opcion" data-egreso-no="' + i + '">No es de la caja</button></div></div>').join('') + '</div>' : '';
   $('s-admin').innerHTML = '<div class="card"><h2>Transferencias sin asignar</h2><p class="ayuda">Elegí de quién es. Si vino de Mercado Pago, la cuenta queda guardada y los próximos pagos desde ahí se cargan solos.</p>' +
     sinAsignar + '</div>' + devoluciones + egresos + '<div class="card"><h2>Por clasificar</h2><p class="ayuda">Pagos de integrantes que no son múltiplo de la cuota. No suman a la caja hasta que elijas.</p>' + clasificar + '</div>';
-  $('s-admin').querySelectorAll('[data-asignar]').forEach(b => b.onclick = () => {
-    const t = a.porRevisar[b.dataset.asignar];
-    const sel = $('asig' + b.dataset.asignar);
-    if (!sel.value) return toast('Elegí de quién es la transferencia.', true);
-    servidor('adminAsignar', [pin, t.op, sel.value], listo('revisar'), b);
+  $('s-admin').querySelectorAll('[data-asignar]').forEach(b => {
+    let armado = '';
+    b.onclick = () => {
+      const t = a.porRevisar[b.dataset.asignar];
+      const sel = $('asig' + b.dataset.asignar);
+      if (!sel.value) return toast('Elegí de quién es la transferencia.', true);
+      // Si ese integrante ya tiene el pago cargado, asignarla lo suma de nuevo: se confirma.
+      if (t.duplicados.some(d => d.apodo === sel.value) && armado !== sel.value) {
+        armado = sel.value;
+        return toast('¿Es OTRO pago de ' + sel.value + '? Si es el mismo, usá "Es el pago de ' + sel.value + '". Si es otro, tocá Asignar de nuevo.', true);
+      }
+      servidor('adminAsignar', [pin, t.op, sel.value], listo('revisar'), b);
+    };
   });
-  $('s-admin').querySelectorAll('[data-descartar]').forEach(b => b.onclick = () => {
-    servidor('adminDescartar', [pin, a.porRevisar[b.dataset.descartar].op], listo('revisar'), b);
-  });
+  $('s-admin').querySelectorAll('[data-descartar]').forEach(b =>
+    dobleToque(b, 'Tocá de nuevo: no es de la caja', () => servidor('adminDescartar', [pin, a.porRevisar[b.dataset.descartar].op], listo('revisar'), b)));
   $('s-admin').querySelectorAll('[data-mismo]').forEach(b => {
     const t = a.porRevisar[b.dataset.mismo];
     const d = t.duplicados[b.dataset.opcion];
@@ -533,9 +540,11 @@ function vRevisar() {
   });
   $('s-admin').querySelectorAll('[data-devuelto]').forEach(b =>
     dobleToque(b, 'Tocá de nuevo para anular', () => servidor('adminAnularDevuelto', [pin, a.devoluciones[b.dataset.devuelto].op], listo('revisar'), b)));
-  $('s-admin').querySelectorAll('[data-cerrar]').forEach(b => b.onclick = () => servidor('adminDescartar', [pin, a.devoluciones[b.dataset.cerrar].op], listo('revisar'), b));
+  $('s-admin').querySelectorAll('[data-cerrar]').forEach(b =>
+    dobleToque(b, 'Tocá de nuevo para cerrar', () => servidor('adminDescartar', [pin, a.devoluciones[b.dataset.cerrar].op], listo('revisar'), b)));
   $('s-admin').querySelectorAll('[data-egreso]').forEach(b => b.onclick = () => ir('gasto', { op: a.egresos[b.dataset.egreso].op }));
-  $('s-admin').querySelectorAll('[data-egreso-no]').forEach(b => b.onclick = () => servidor('adminDescartar', [pin, a.egresos[b.dataset.egresoNo].op], listo('revisar'), b));
+  $('s-admin').querySelectorAll('[data-egreso-no]').forEach(b =>
+    dobleToque(b, 'Tocá de nuevo: no es de la caja', () => servidor('adminDescartar', [pin, a.egresos[b.dataset.egresoNo].op], listo('revisar'), b)));
   $('s-admin').querySelectorAll('[data-clas]').forEach(b => b.onclick = () => {
     const p = a.porClasificar[b.dataset.clas];
     servidor('adminClasificar', [pin, p.fila, b.dataset.imp, { apodo: p.apodo, monto: p.monto }], listo('revisar'), b);
@@ -648,7 +657,7 @@ function achicarImagen(archivo) {
 function vIntegrantes() {
   const a = ADMIN;
   cabeceraAdmin('Integrantes', plural(apodos().length, 'activo', 'activos'), 'inicio');
-  const sub = m => m.auto ? 'Administrador · cuota automática' : m.baja ? 'Juega hasta ' + m.baja : m.cuentas ? plural(m.cuentas, 'cuenta registrada', 'cuentas registradas') : 'Sin cuenta registrada';
+  const sub = m => m.auto ? 'Administrador · cuota automática' : m.noJuega ? 'No juega esta temporada' : m.baja ? 'Juega hasta ' + m.baja : m.cuentas ? plural(m.cuentas, 'cuenta registrada', 'cuentas registradas') : 'Sin cuenta registrada';
   const estado = m => m.cuotasDebe ? '<span class="rojo" style="font-weight:600">Debe ' + m.cuotasDebe + '</span>' :
     '<span class="azul" style="font-weight:600">' + (m.hasta ? 'Hasta ' + esc(mesDe(m.hasta).slice(0, 3)) : 'Al día') + '</span>';
   $('s-admin').innerHTML =
@@ -709,7 +718,8 @@ function vEditarIntegrante(x) {
     '<div class="campo"><label for="eiCuits">CUIT (si tiene varios, separados por coma)</label><input type="text" id="eiCuits" value="' + esc(d.cuits) + '"></div>' +
     '<div class="campo"><label for="eiCvus">CVU o CBU (si tiene varios, separados por coma)</label><input type="text" id="eiCvus" value="' + esc(d.cvus) + '"></div>' +
     (d.cuentasMp.length ? '<div><span class="lbl">Cuentas de Mercado Pago reconocidas</span>' + d.cuentasMp.map(c => '<label class="check"><input type="checkbox" data-cuenta="' + esc(c.id) +
-      '" checked> Cuenta terminada en ' + esc(c.fin) + '</label>').join('') + '<p class="ayuda">Destildá una cuenta si no es de ' + esc(x.apodo) + ': sus transferencias van a ir a "Para revisar".</p></div>' : '') +
+      '" checked> Cuenta terminada en ' + esc(c.fin) + (c.cuit ? ' (CUIT ' + esc(c.cuit) + ')' : '') + '</label>').join('') +
+      '<p class="ayuda">Destildá una cuenta si no es de ' + esc(x.apodo) + ': se saca también su CUIT y sus transferencias van a ir a "Para revisar".</p></div>' : '') +
     '<p class="ayuda">Con el CUIT, sus transferencias de Mercado Pago se cargan solas.</p><button class="prim" id="eiGuardar">Guardar datos</button></div>';
   $('eiGuardar').onclick = () => {
     const datos = { apodo: $('eiApodo').value, nombre: $('eiNombre').value, apellido: $('eiApellido').value, alta: $('eiAlta').value,
