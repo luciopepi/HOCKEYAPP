@@ -595,8 +595,16 @@ function vGasto(x) {
     '<svg aria-hidden="true" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h3l2-2h6l2 2h3v12H4z"/><circle cx="12" cy="13" r="3.5"/></svg>' +
     '<b>Subir imagen del comprobante</b><span class="det">La captura del movimiento en Mercado Pago</span></label>' +
     '<input id="gFoto" type="file" accept="image/*" class="solo-lector"><span class="det" id="gEstado" aria-live="polite"></span>' +
-    '<div class="linea-sel"><label class="solo-lector" for="gOp">N° de operación</label><input type="text" id="gOp" inputmode="numeric" placeholder="O escribí el N° de operación"><button class="sec" id="gBuscar">Buscar</button></div></div>' +
+    '<div class="linea-sel"><label class="solo-lector" for="gOp">N° de operación</label><input type="text" id="gOp" inputmode="numeric" placeholder="O pegá el N° de operación"><button class="sec" id="gBuscar">Buscar</button></div>' +
+    '<p class="ayuda">Con el N°, la fecha y el monto se copian de Mercado Pago.</p></div>' +
+    '<button class="sec" id="gManual" style="min-height:48px">Sin comprobante (efectivo u otro): cargar a mano</button>' +
     '<div id="gPaso2"></div>';
+  // Si no se encuentra el N°, se puede cargar igual a mano, con el N° anotado (decisión 42).
+  const ofrecerManual = (texto, ref) => {
+    $('gEstado').innerHTML = esc(texto) + ' <button class="link" id="gAMano">Cargar a mano' + (ref ? ' con este N°' : '') + '</button>';
+    $('gAMano').onclick = () => gastoManual(ref);
+  };
+  $('gManual').onclick = () => gastoManual('');
   $('gFoto').onchange = () => {
     const f = $('gFoto').files[0];
     if (!f) return;
@@ -605,16 +613,34 @@ function vGasto(x) {
       servidor('adminLeerComprobante', [pin, { datos: datos, tipo: 'image/jpeg' }], r => {
         estadoForm.archivoId = r.archivoId || '';
         if (r.op) { $('gEstado').textContent = 'Listo: operación encontrada.'; $('gOp').value = r.op; paso2Gasto(r.op, r.pago); }
-        else $('gEstado').textContent = r.mensaje || 'No pude leer el N°. Escribilo.';
-      }, null, () => { $('gEstado').textContent = ''; });
+        else ofrecerManual(r.mensaje || 'No pude leer el N°. Escribilo.', '');
+      }, null, texto => ofrecerManual(texto, ''));
     }).catch(() => { $('gEstado').textContent = 'No pude abrir la imagen. Escribí el N° de operación.'; });
   };
   $('gBuscar').onclick = () => {
     const op = $('gOp').value.trim();
     if (!op) return toast('Escribí el N° de operación.', true);
-    servidor('adminBuscarOperacion', [pin, op], r => paso2Gasto(r.op, r.pago), $('gBuscar'));
+    $('gEstado').textContent = '';
+    servidor('adminBuscarOperacion', [pin, op], r => paso2Gasto(r.op, r.pago), $('gBuscar'), texto => ofrecerManual(texto, op));
   };
   if (x && x.op) { $('gOp').value = x.op; $('gBuscar').onclick(); }
+}
+
+/** Gasto a mano (decisión 39): monto y qué era. Fecha de hoy, tipo "Otro"; se cambian en Gastos. */
+function gastoManual(ref) {
+  $('gPaso2').innerHTML = '<div class="card"><span class="titulo-sec">Gasto a mano</span>' +
+    (ref ? '<div class="aviso-box info">Queda anotado el N° ' + esc(ref) + '.</div>' : '') +
+    '<div class="campo"><label for="gmMonto">Monto ($)</label><input type="number" id="gmMonto" inputmode="numeric" min="1" step="1"></div>' +
+    '<div class="campo"><label for="gmConcepto">Qué era</label><input type="text" id="gmConcepto" maxlength="80" placeholder="Ej.: bochas, agua para el partido"></div>' +
+    '<p class="ayuda">Queda con la fecha de hoy y tipo "Otro". Si hace falta, lo cambiás después en Gastos.</p>' +
+    '<button class="prim" id="gmGuardar">Guardar gasto</button></div>';
+  $('gmMonto').focus();
+  $('gmGuardar').onclick = () => {
+    const d = { monto: $('gmMonto').value, concepto: $('gmConcepto').value, referencia: ref, archivoId: estadoForm.archivoId };
+    if (!(Number(d.monto) > 0)) return toast('Revisá el monto.', true);
+    if (!d.concepto.trim()) return toast('Escribí qué era.', true);
+    servidor('adminGastoManual', [pin, d], listo('inicio'), $('gmGuardar'));
+  };
 }
 
 function paso2Gasto(op, pago) {

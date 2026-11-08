@@ -1234,6 +1234,39 @@ function adminAnularGasto(pin, fila, esperado) {
   });
 }
 
+/**
+ * Gasto cargado a mano (decisión 39): en efectivo o sin comprobante de Mercado Pago. Solo el
+ * monto y qué era; la fecha es hoy y el tipo "Otro" (se cambian después en Gastos).
+ * d.referencia: el N° que se escribió y Mercado Pago no encontró (decisión 42).
+ */
+function adminGastoManual(pin, d) {
+  verificarPin_(pin);
+  d = d || {};
+  return conLock_(() => {
+    const ss = SpreadsheetApp.getActive();
+    const monto = montoValido_(d.monto);
+    const concepto = textoLibre_(d.concepto, 80);
+    if (!concepto) throw new Error('Escribí qué era.');
+    const ref = normalizarOp_(textoLibre_(d.referencia, 40));
+    const hGastos = hoja_(ss, HOJA.GASTOS);
+    if (ref && operaciones_(hGastos, COL_GASTOS.OPERACION).has(ref)) throw new Error('Ese N° ya está cargado en Gastos.');
+    const archivo = /^[\w-]{10,}$/.test(String(d.archivoId || '')) ? 'https://drive.google.com/file/d/' + d.archivoId : '';
+    // Evita cargarlo dos veces si se toca el botón de nuevo.
+    const clave = ['adminGasto', monto, concepto].join('|');
+    const cache = CacheService.getScriptCache();
+    if (cache.get(clave)) throw new Error('Ese gasto ya se cargó hace un momento.');
+    agregarFilas_(hGastos, [[hoyLocal_(), 'Otro', texto_(concepto), monto, saleDe_('Otro'), '', texto_(ref),
+      'Cargado a mano desde la app' + (ref ? '. N° de comprobante: ' + ref : '') + (archivo ? '. Comprobante: ' + archivo : '')]],
+      COL_GASTOS.TOTAL, [7], COLOR_MANUAL);
+    hGastos.getRange(hGastos.getLastRow(), 1).setNumberFormat('dd/mm/yyyy');
+    cache.put(clave, '1', 120);
+    // Si era un pago al club que estaba en "Para revisar", se cierra el aviso.
+    const aviso = ref ? porRevisar_(ss).find(x => x.tipo === 'Egreso' && x.op === ref) : null;
+    if (aviso) hoja_(ss, HOJA.REVISAR).deleteRow(aviso.fila);
+    return respuestaAdmin_('Listo: gasto de ' + pesos_(monto) + ' (' + concepto + ') guardado. El tipo y la fecha se cambian en Gastos.');
+  });
+}
+
 function buscarPago_(id) {
   try {
     return mpGet_('/v1/payments/' + id, {});

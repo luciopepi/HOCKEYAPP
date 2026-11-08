@@ -51,7 +51,7 @@ Después de instalar, todo se hace desde la app (DISENO.md, decisión 30). El me
 | Para revisar | Asignar transferencias sin dueño (se guarda la cuenta y las próximas entran solas) o marcarlas "No es de la caja". Si ya había un pago cargado a mano sin N° de Mercado Pago, ofrece "Es el pago de…" (de cualquiera si vino de un banco; si trae la cuenta de un integrante, solo de ese integrante). Devoluciones de Mercado Pago (anular el pago) y pagos al club por otro monto (cargar como gasto). Clasificar los pagos que no son múltiplo de la cuota |
 | Buscar transferencias ahora | Trae las transferencias de Mercado Pago en el momento, sin esperar los 30 minutos |
 | Pago en efectivo | Cuota, otra cosa de la caja o algo que no es de la caja |
-| Gasto | Subís la imagen del comprobante de Mercado Pago; la app lee el N° de operación y trae monto, fecha y destinatario. Si no lo lee, lo escribís |
+| Gasto | Con comprobante: subís la imagen o pegás el N° de operación, y la app trae monto, fecha y destinatario. Sin comprobante (efectivo u otro): monto y qué era, con la fecha del día. Si el N° no aparece en Mercado Pago, "Cargar a mano con este N°" |
 | Pagos | Editar (integrante, fecha, monto, imputación, nota), repartir entre integrantes (si pagó por varios) o anular. Lo que vino de Mercado Pago no cambia de monto ni de fecha. Un pago anulado no suma y queda registrado; se puede restaurar |
 | Gastos | Editar o anular, igual que los pagos. En la cancha se elige a qué mes corresponde |
 | Integrantes | Alta (después del día 15 paga media cuota ese mes), baja con el último mes que juega y deshacer la baja. En cada integrante: sus pagos y "Editar datos" (apodo, nombre, CUIT, CVU/CBU, cuentas de Mercado Pago, fecha de alta) |
@@ -111,7 +111,7 @@ Cómo se calcula (DISENO.md, decisiones 10 a 12, 22 y 25):
 
 ## Pruebas
 
-`test/` simula Google Sheets, Drive y la API de Mercado Pago (318 casos):
+`test/` simula Google Sheets, Drive y la API de Mercado Pago (326 casos):
 
 ```
 TZ=America/Argentina/San_Juan node apps-script/test/run.js

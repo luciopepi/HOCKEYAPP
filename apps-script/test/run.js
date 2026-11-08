@@ -1349,6 +1349,27 @@ section('B18 Google Drive: el error dice qué hacer y el gasto se puede cargar i
   check('subir la foto sin Drive no corta: avisa qué activar y deja escribir el N°', !x.e && x.r.op === null && /Drive API/.test(x.r.mensaje) && /escribí el N°/.test(x.r.mensaje), x.e ? x.e.message : JSON.stringify(x.r));
 }
 
+section('B19 gastos a mano: efectivo o sin comprobante de Mercado Pago');
+{
+  const w = mundoAdmin();
+  let x = intentar(() => w.ctx.adminGastoManual(PIN, { monto: '8500', concepto: 'Agua para el partido' }));
+  check('se guarda con la fecha de hoy, tipo Otro y "qué era"', !x.e && rowsOf(w, 'Gastos').some(r => /^10\/10\/2026/.test(r[0]) && r[1] === 'Otro' && r[2] === 'Agua para el partido' && r[3] === '8500' && r[4] === 'Caja' && /a mano/.test(r[7])),
+    x.e ? x.e.message : JSON.stringify(rowsOf(w, 'Gastos')));
+  check('descuenta de la caja y lo ve el equipo', x.r.datos.caja.gastado === 128500 && x.r.datos.gastos.some(g => g.concepto === 'Agua para el partido'));
+  const g = x.r.admin.gastos.find(y => y.concepto === 'Agua para el partido');
+  check('queda editable (monto, fecha y tipo)', g && !g.bloqueado);
+  x = intentar(() => w.ctx.adminGastoManual(PIN, { monto: '8500', concepto: 'Agua para el partido' }));
+  check('doble toque: no lo carga dos veces', x.e && /hace un momento/.test(x.e.message));
+  x = intentar(() => w.ctx.adminGastoManual(PIN, { monto: '20000', concepto: 'Conos', referencia: '186434419524' }));
+  check('con un N° que Mercado Pago no encontró: queda anotado', !x.e && rowsOf(w, 'Gastos').some(r => r[2] === 'Conos' && r[6] === '186434419524' && /N° de comprobante: 186434419524/.test(r[7])), x.e && x.e.message);
+  x = intentar(() => w.ctx.adminGastoManual(PIN, { monto: '20000', concepto: 'Conos otra vez', referencia: '186434419524' }));
+  check('el mismo N° no se carga dos veces', x.e && /ya está cargado/.test(x.e.message));
+  const malos = [[{ monto: '0', concepto: 'x' }, /monto/], [{ monto: '100', concepto: ' ' }, /qué era/]];
+  check('valida monto y "qué era"', malos.every(([d, re]) => { const y = intentar(() => w.ctx.adminGastoManual(PIN, d)); return y.e && re.test(y.e.message); }));
+  x = intentar(() => w.ctx.adminGastoManual('000000', { monto: '100', concepto: 'x' }));
+  check('sin PIN no carga', x.e && /PIN/.test(x.e.message));
+}
+
 section('A11 cualquier orden de archivos en el editor');
 {
   const archivos = ['Codigo.gs', 'Calculo.gs', 'Web.gs'];
