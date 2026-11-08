@@ -1256,7 +1256,7 @@ section('B14 gastos: una transferencia recibida nunca se toma como gasto; CUIT c
   const w = mundoAdmin(basePayments().concat([pay({ id: 184000008401, created: '2026-10-10 10:00', payerId: ME, amount: 15000, ptype: 'bank_transfer', pmethod: 'cvu' })]));
   sync(w, '2026-10-10 11:00');
   let x = intentar(() => w.ctx.adminBuscarOperacion(PIN, '184000008401'));
-  check('buscar una transferencia de banco recibida: "es un cobro"', x.e && /cobro/.test(x.e.message), x.e ? x.e.message : JSON.stringify(x.r));
+  check('buscar una transferencia de banco recibida que está en Por revisar: lo dice y explica cómo seguir', x.e && /Para revisar/.test(x.e.message), x.e ? x.e.message : JSON.stringify(x.r));
   x = intentar(() => w.ctx.adminGuardarGasto(PIN, { op: '184000008401', tipo: 'Otro', concepto: 'error' }));
   check('no se guarda y sigue en Por revisar', x.e && findOp(revisar(w), 7, '184000008401').length === 1);
   x = intentar(() => w.ctx.adminEditarIntegrante(PIN, 'Colo', { apodo: 'Colo', cuits: '20 12345678 9' }));
@@ -1311,6 +1311,42 @@ section('B16 mes de la cancha: se elige al cargar o editar el gasto');
   check('se cambia el mes aunque venga de Mercado Pago', !x.e && /cancha de diciembre 2026/.test(rowsOf(w, 'Gastos')[1][7]) && !x.r.datos.cancha.pagada, x.e ? x.e.message : JSON.stringify(x.r.datos.cancha));
   x = intentar(() => w.ctx.adminEditarGasto(PIN, g.fila, { monto: g.monto, concepto: g.concepto }, { tipo: 'Cancha', mes: '2025-01', concepto: g.concepto, destinatario: g.destinatario }));
   check('no acepta un mes fuera de la temporada', x.e && /mes de la temporada/.test(x.e.message));
+}
+
+section('B17 gastos: transferencias enviadas a un CVU o CBU se aceptan; cobros no');
+{
+  const w = mundoAdmin(basePayments().concat([
+    // Enviada a un CVU: Mercado Pago la muestra con tu cuenta de los dos lados.
+    pay({ id: 187000000001, created: '2026-10-10 09:00', payerId: ME, amount: 95000, ptype: 'bank_transfer', pmethod: 'cvu' }),
+    // Enviada a otra cuenta, sin el pagador informado.
+    Object.assign(pay({ id: 187000000002, created: '2026-10-10 09:30', payerId: null, collector: 555000111, amount: 42000 }), { __mia: true }),
+    // Un cobro de otra persona.
+    pay({ id: 187000000003, created: '2026-10-10 10:00', payerId: 444000999, cuit: '20555666777', amount: 15000 }),
+  ]));
+  let x = intentar(() => w.ctx.adminBuscarOperacion(PIN, '187000000001'));
+  check('enviada a un CVU (tu cuenta de los dos lados, no está en la planilla): se acepta', !x.e && x.r.pago.monto === 95000, x.e && x.e.message);
+  x = intentar(() => w.ctx.adminBuscarOperacion(PIN, '187000000002'));
+  check('cobrada por otra cuenta: la pagaste vos', !x.e && x.r.pago.monto === 42000, x.e && x.e.message);
+  x = intentar(() => w.ctx.adminBuscarOperacion(PIN, '187000000003'));
+  check('un cobro: no, y muestra los datos para entender por qué', x.e && /es un cobro/.test(x.e.message) && /pagó otra cuenta, cobró vos/.test(x.e.message) && !/20555666777/.test(x.e.message), x.e && x.e.message);
+  x = intentar(() => w.ctx.adminGuardarGasto(PIN, { op: '187000000001', tipo: 'Equipamiento', concepto: 'Bochas' }));
+  check('se guarda el gasto de la transferencia a un CVU', !x.e && rowsOf(w, 'Gastos').some(r => r[6] === '187000000001' && r[3] === '95000'), x.e && x.e.message);
+}
+
+section('B18 Google Drive: el error dice qué hacer y el gasto se puede cargar igual');
+{
+  const w = mundoAdmin();
+  check('API de Drive sin activar', /Servicios \(\+\) → Drive API/.test(w.ctx.errorDrive_(403, JSON.stringify({ error: { message: 'Google Drive API has not been used in project 123 before or it is disabled.', errors: [{ reason: 'accessNotConfigured' }] } }))));
+  check('falta el permiso', /Seleccionar todo/.test(w.ctx.errorDrive_(403, JSON.stringify({ error: { message: 'Request had insufficient authentication scopes.', errors: [{ reason: 'insufficientPermissions' }] } }))));
+  check('otro error: muestra el mensaje de Google', /respondió 500: Backend Error/.test(w.ctx.errorDrive_(500, JSON.stringify({ error: { message: 'Backend Error' } }))));
+  w.ctx.UrlFetchApp.fetchOriginal = w.ctx.UrlFetchApp.fetch;
+  const fetchViejo = w.ctx.UrlFetchApp.fetch;
+  w.ctx.UrlFetchApp.fetch = (url, o) => /googleapis\.com/.test(url)
+    ? { getResponseCode: () => 403, getContentText: () => JSON.stringify({ error: { message: 'Google Drive API has not been used in project 1 before or it is disabled.', errors: [{ reason: 'accessNotConfigured' }] } }) }
+    : fetchViejo(url, o);
+  const x = intentar(() => w.ctx.adminLeerComprobante(PIN, { datos: 'aGVsbG8=', tipo: 'image/jpeg' }));
+  w.ctx.UrlFetchApp.fetch = fetchViejo;
+  check('subir la foto sin Drive no corta: avisa qué activar y deja escribir el N°', !x.e && x.r.op === null && /Drive API/.test(x.r.mensaje) && /escribí el N°/.test(x.r.mensaje), x.e ? x.e.message : JSON.stringify(x.r));
 }
 
 section('A11 cualquier orden de archivos en el editor');

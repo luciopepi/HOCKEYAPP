@@ -1086,14 +1086,23 @@ function adminLeerComprobante(pin, img) {
   if (!/^image\/(jpeg|png|webp|heic|heif)$/.test(String(img.tipo))) throw new Error('Subí una imagen (JPG o PNG).');
   const blob = Utilities.newBlob(Utilities.base64Decode(datos), img.tipo,
     'comprobante-' + Utilities.formatDate(new Date(), ZONA, 'yyyyMMdd-HHmmss') + (img.tipo === 'image/png' ? '.png' : '.jpg'));
-  const archivoId = subirDrive_(blob, { name: blob.getName(), parents: [carpetaComprobantes_()] });
+  let archivoId = '';
+  let texto = '';
+  try {
+    archivoId = subirDrive_(blob, { name: blob.getName(), parents: [carpetaComprobantes_()] });
+    texto = ocr_(blob);
+  } catch (e) {
+    // Sin Drive no se guarda ni se lee la imagen, pero el gasto se puede cargar con el N° escrito.
+    return { op: null, archivoId: archivoId, mensaje: e.message + ' Mientras tanto, escribí el N° de operación abajo.' };
+  }
   const miId = String(miUsuario_().id);
-  const candidatos = numerosOperacion_(ocr_(blob)).slice(0, 4);
+  const ingreso = ingresoConocido_(SpreadsheetApp.getActive());
+  const candidatos = numerosOperacion_(texto).slice(0, 4);
   let aviso = '';
   for (let i = 0; i < candidatos.length; i++) {
     try {
       const pago = buscarPago_(candidatos[i]);
-      if (pago) return { op: candidatos[i], archivoId: archivoId, pago: resumenGasto_(pago, miId) };
+      if (pago) return { op: candidatos[i], archivoId: archivoId, pago: resumenGasto_(pago, miId, ingreso) };
     } catch (e) {
       if (/\b401\b/.test(e.message)) throw e; // la clave de Mercado Pago no sirve: hay que avisar
       aviso = e.message;
@@ -1109,7 +1118,7 @@ function adminBuscarOperacion(pin, op) {
   if (id.length < 6) throw new Error('Escribí el N° de operación del comprobante.');
   const pago = buscarPago_(id);
   if (!pago) throw new Error('No encontré esa operación en tu cuenta de Mercado Pago.');
-  return { op: id, pago: resumenGasto_(pago, String(miUsuario_().id)) };
+  return { op: id, pago: resumenGasto_(pago, String(miUsuario_().id), ingresoConocido_(SpreadsheetApp.getActive())) };
 }
 
 function adminGuardarGasto(pin, d) {
@@ -1125,7 +1134,7 @@ function adminGuardarGasto(pin, d) {
     if (operaciones_(hGastos, COL_GASTOS.OPERACION).has(id)) throw new Error('Esa operación ya está cargada en Gastos.');
     const pago = buscarPago_(id);
     if (!pago) throw new Error('No encontré esa operación en tu cuenta de Mercado Pago.');
-    const r = resumenGasto_(pago, String(miUsuario_().id));
+    const r = resumenGasto_(pago, String(miUsuario_().id), ingresoConocido_(ss));
     const destinatario = textoLibre_(d.destinatario, 80) || r.destinatario;
     const archivo = /^[\w-]{10,}$/.test(String(d.archivoId || '')) ? 'https://drive.google.com/file/d/' + d.archivoId : '';
     const mes = d.tipo === 'Cancha' ? mesCancha_(d.mes, ss) : null;
@@ -1234,17 +1243,45 @@ function buscarPago_(id) {
   }
 }
 
-/** Datos de un pago tuyo (un gasto). Un cobro no se acepta como gasto. */
-function resumenGasto_(p, miId) {
+/**
+ * Datos de un pago tuyo (un gasto). Un cobro no se acepta como gasto.
+ * Con tu clave solo se ven operaciones en las que participás: si la cobró otra cuenta, la
+ * pagaste vos. Las transferencias a un CVU o CBU, igual que las que recibís desde un banco,
+ * pueden figurar con tu cuenta de los dos lados: se aceptan salvo que ya estén en la
+ * planilla como ingreso (en Pagos o en "Por revisar"). ingresoConocido: ver ingresoConocido_.
+ */
+function resumenGasto_(p, miId, ingresoConocido) {
   if (p.status !== 'approved') throw new Error('Esa operación no está aprobada en Mercado Pago.');
-  // Las transferencias desde bancos que recibís también figuran con vos como pagador.
-  if (String(get_(p, 'payer.id')) !== miId || idCobrador_(p) === miId) throw new Error('Esa operación es un cobro, no un pago tuyo.');
+  const pagador = String(get_(p, 'payer.id') || '');
+  const cobrador = idCobrador_(p);
+  if (cobrador === miId) {
+    const donde = ingresoConocido(String(p.id));
+    if (pagador !== miId) throw new Error('Esa operación es un cobro, no un pago tuyo. (Datos: ' + describirPago_(p, miId) + ')');
+    if (donde === 'revisar') {
+      throw new Error('Esa operación está en "Para revisar" como transferencia recibida. Si es un pago tuyo, tocá "No es de la caja" ahí y cargala de nuevo.');
+    }
+    if (donde === 'pagos') throw new Error('Esa operación ya está cargada en Pagos como ingreso.');
+  }
   return {
     fecha: fechaLarga_(fechaPago_(p)),
     mes: claveMes_(primerDia_(soloDia_(fechaPago_(p)))),
     monto: Number(p.transaction_amount) || 0,
     destinatario: nombreDestinatario_(p),
   };
+}
+
+/** ¿La operación ya está en la planilla como ingreso? Devuelve "pagos", "revisar" o "". */
+function ingresoConocido_(ss) {
+  const enPagos = operaciones_(hoja_(ss, HOJA.PAGOS), COL_PAGOS.OPERACION);
+  const enRevisar = new Set(porRevisar_(ss).filter(x => x.tipo === 'Ingreso').map(x => x.op));
+  return op => (enPagos.has(op) ? 'pagos' : enRevisar.has(op) ? 'revisar' : '');
+}
+
+/** Descripción técnica corta (sin CUIT ni cuentas) para entender por qué no se aceptó. */
+function describirPago_(p, miId) {
+  const quien = id => (!id ? 'nadie' : String(id) === miId ? 'vos' : 'otra cuenta');
+  return ['tipo ' + p.operation_type, 'medio ' + p.payment_type_id + '/' + p.payment_method_id,
+    'pagó ' + quien(get_(p, 'payer.id')), 'cobró ' + quien(idCobrador_(p))].join(', ');
 }
 
 function nombreDestinatario_(p) {
@@ -1281,8 +1318,28 @@ function driveFetch_(url, opciones) {
     muteHttpExceptions: true,
   }, opciones || {}));
   const code = r.getResponseCode();
-  if (code >= 300) throw new Error('Google Drive respondió ' + code + '. ¿Aceptaste el permiso de Drive?');
+  if (code >= 300) throw new Error(errorDrive_(code, r.getContentText()));
   return r;
+}
+
+/** Explica un error de Google Drive con lo que hay que hacer. */
+function errorDrive_(code, cuerpo) {
+  let motivo = '';
+  let texto = '';
+  try {
+    const e = JSON.parse(cuerpo).error || {};
+    texto = String(e.message || '');
+    motivo = String(((e.errors || [])[0] || {}).reason || (((e.details || [])[0] || {}).reason) || '');
+  } catch (err) {
+    texto = String(cuerpo || '').slice(0, 200);
+  }
+  if (/accessNotConfigured|SERVICE_DISABLED/i.test(motivo) || /has not been used|is disabled/i.test(texto)) {
+    return 'Falta activar Google Drive en Apps Script: Servicios (+) → Drive API → Agregar, y publicá una versión nueva.';
+  }
+  if (/insufficient|ACCESS_TOKEN_SCOPE/i.test(motivo + ' ' + texto)) {
+    return 'Falta el permiso de Google Drive: en la planilla usá Caja Hockey → Recalcular cuotas y resumen y aceptá con "Seleccionar todo".';
+  }
+  return 'Google Drive respondió ' + code + (texto ? ': ' + texto : '') + '.';
 }
 
 /** Carpeta "Caja Hockey - Comprobantes" en tu Drive (se crea la primera vez). */

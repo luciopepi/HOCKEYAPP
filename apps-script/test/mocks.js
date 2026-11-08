@@ -312,7 +312,8 @@ function makeMP(world, opts) {
     if (m) {
       const p = world.payments.find(x => String(x.id) === m[1]);
       if (!p) return resp(404, { message: 'Payment not found' });
-      if (String(p.collector_id) !== String(world.me) && String(p.payer && p.payer.id) !== String(world.me)) {
+      // Solo se ven las operaciones en las que participa la cuenta (__mia: pagó la cuenta aunque no figure como pagador).
+      if (!p.__mia && String(p.collector_id) !== String(world.me) && String(p.payer && p.payer.id) !== String(world.me)) {
         return resp(404, { message: 'Payment not found' });
       }
       return resp(200, JSON.parse(JSON.stringify(p)));

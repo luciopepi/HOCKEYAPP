@@ -23,6 +23,7 @@ Script de Google Apps Script para la planilla **Caja Hockey**. Corre gratis en l
    | `App.html` | + → HTML → `App` (sin .html) | [`App.html`](App.html) |
 
 3. **Configuración del proyecto** (engranaje) → tildá "Mostrar el archivo de manifiesto" → volvé al editor y reemplazá `appsscript.json` por [`appsscript.json`](appsscript.json) (suma el permiso de Drive para guardar comprobantes).
+   - En el editor, a la izquierda: **Servicios (+) → Drive API → Agregar**. Activa Google Drive para el proyecto; sin esto, leer la foto del comprobante da error. Si ya figura "Drive" en Servicios, no hace falta.
 4. Guardá todo (Ctrl+S).
 5. Recargá la planilla → **Caja Hockey → Recalcular cuotas y resumen**.
    - Google pide autorizar por el permiso nuevo: elegí tu cuenta → Configuración avanzada → Ir a Caja Hockey → **Seleccionar todo** → Continuar. Después volvé a elegir el menú.
@@ -110,7 +111,7 @@ Cómo se calcula (DISENO.md, decisiones 10 a 12, 22 y 25):
 
 ## Pruebas
 
-`test/` simula Google Sheets, Drive y la API de Mercado Pago (310 casos):
+`test/` simula Google Sheets, Drive y la API de Mercado Pago (318 casos):
 
 ```
 TZ=America/Argentina/San_Juan node apps-script/test/run.js
