@@ -1383,6 +1383,7 @@ section('B20 invitados: efectivo, transferencia y pago de un integrante por su i
   check('efectivo: fila "Invitado" sin integrante', !x.e && rowsOf(w, 'Pagos').some(r => r[1] === 'Invitado' && r[2] === '3000' && r[3] === 'Invitado' && r[4] === 'Efectivo'), x.e && x.e.message);
   check('suma a la cancha del mes y a la caja', x.r.datos.cancha.recaudado === antes.cancha.recaudado + 3000 && x.r.datos.cancha.invitados === 3000 &&
     x.r.datos.caja.cobrado === antes.caja.cobrado + 3000, JSON.stringify(x.r.datos.cancha));
+  check('el público ve el total de invitados de la temporada', x.r.datos.caja.invitados === 3000, JSON.stringify(x.r.datos.caja));
   check('el público ve el total de invitados del mes, no una persona "Invitado"', x.r.datos.porMes[0].invitados === 3000 && !x.r.datos.integrantes.some(m => m.apodo === 'Invitado') &&
     !x.r.admin.integrantes.some(m => m.apodo === 'Invitado'));
   x = intentar(() => w.ctx.adminCargarInvitado(PIN, { monto: '3000', fecha: '2026-10-10' }));

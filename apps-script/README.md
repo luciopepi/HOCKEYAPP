@@ -42,7 +42,7 @@ Después de instalar, todo se hace desde la app (DISENO.md, decisión 30). El me
 
 ## La app
 
-**Sin ingresar** (lo que ve el equipo): cancha del mes, saldo, quién falta pagar (en cuotas, sin montos), planilla de cuotas, "Mi cuota" y la caja con los gastos.
+**Sin ingresar** (lo que ve el equipo): cancha del mes, saldo, lo que entró por invitados (en el mes y en la temporada), quién falta pagar (en cuotas, sin montos), planilla de cuotas, "Mi cuota" y la caja con los gastos.
 
 **Panel del administrador** (al pie: **Administrar**, con PIN):
 
@@ -112,7 +112,7 @@ Cómo se calcula (DISENO.md, decisiones 10 a 12, 22 y 25):
 
 ## Pruebas
 
-`test/` simula Google Sheets, Drive y la API de Mercado Pago (337 casos):
+`test/` simula Google Sheets, Drive y la API de Mercado Pago (338 casos):
 
 ```
 TZ=America/Argentina/San_Juan node apps-script/test/run.js

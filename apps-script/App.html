@@ -204,6 +204,8 @@ function inicio() {
     '<div class="kpis"><div class="card kpi"><span class="etq2">Saldo en caja</span><span class="num">' + pesos(DATA.caja.saldo) +
     '</span><span class="det">Mercado Pago y efectivo</span></div><div class="card kpi"><span class="etq2">Fondo equipamiento</span><span class="num">' +
     pesos(DATA.caja.fondo) + '</span><span class="det">Lo que sobra después de la cancha</span></div></div>' +
+    '<div class="card kpi"><div class="arriba"><span class="etq2">Invitados</span><span class="det">Temporada: ' + pesos(DATA.caja.invitados || 0) + '</span></div>' +
+    '<span class="num">' + pesos(DATA.cancha.invitados || 0) + '</span><span class="det">Entró por invitados en ' + esc(mesDe(DATA.mes)) + '. Suma a la cancha del mes.</span></div>' +
     '<div class="card"><div class="arriba"><h2>Falta pagar ' + esc(mesDe(DATA.mes)) + '</h2><button class="link" data-ir="planilla">Ver planilla</button></div><div>' +
     (deben.length ? deben.map(m => '<div class="fila"><span class="avatar">' + esc(iniciales(m.apodo)) + '</span><span class="cuerpo"><span class="nombre">' +
       esc(m.apodo) + '</span></span><span class="rojo" style="font-weight:600">Debe ' + plural(m.cuotasDebe, 'cuota', 'cuotas') + '</span></div>').join('')
@@ -263,6 +265,10 @@ function caja() {
     '<div class="fila" style="border:none;padding:4px 0"><span class="punto" style="background:var(--azul)"></span><span class="cuerpo" style="color:var(--gris)">Cuotas pagadas por adelantado</span><b class="der">' + pesos(k.adelantos) + '</b></div>' +
     '<div class="fila" style="border:none;padding:4px 0"><span class="punto" style="background:#A9C0F5"></span><span class="cuerpo" style="color:var(--gris)">Disponible para equipamiento</span><b class="der">' + pesos(k.fondo) + '</b></div>' +
     (DATA.cancha.pagada ? '' : '<p class="ayuda">Se reservan ' + pesos(DATA.cancha.costo) + ' para la cancha del mes.</p>') + '</div>' +
+    '<div class="card"><div class="arriba"><h2>Invitados</h2><b class="der">' + pesos(DATA.caja.invitados || 0) + '</b></div>' +
+      (DATA.porMes.some(p => p.invitados) ? DATA.porMes.filter(p => p.invitados).map(p => '<div class="arriba"><span>' + esc(p.mes.charAt(0).toUpperCase() + p.mes.slice(1)) +
+        '</span><span class="der">' + pesos(p.invitados) + '</span></div>').join('') : '<div class="vacio">Todavía no hubo invitados.</div>') +
+      '<p class="ayuda">Total de la temporada. Lo de cada mes suma a la cancha de ese mes.</p></div>' +
     '<div class="card"><h2>Cobrado por mes</h2>' + (DATA.porMes.length ? DATA.porMes.map(p => '<div style="display:flex;flex-direction:column;gap:4px">' +
       '<div class="arriba"><b>' + esc(p.mes.charAt(0).toUpperCase() + p.mes.slice(1)) + '</b><b class="der">' + pesos(p.cuotas + p.otros + (p.invitados || 0)) + '</b></div>' +
       '<span class="det">Cuotas ' + pesos(p.cuotas) + (p.invitados ? ' · invitados ' + pesos(p.invitados) : '') + (p.otros ? ' · otros ' + pesos(p.otros) : '') + '</span></div>').join('') : '<div class="vacio">Sin cobros.</div>') + '</div>' +
@@ -1046,6 +1052,7 @@ function vWhatsapp() {
     if ($('wCancha').checked) {
       l.push('Cancha: ' + pesos(c.recaudado) + ' de ' + pesos(c.costo) + (c.faltan > 0 ? ' (faltan ' + pesos(c.faltan) + ').' : ' (cubierta).'));
       l.push('Pagaron ' + c.pagaron + ' de ' + c.total + '.');
+      if (c.invitados) l.push('Invitados: ' + pesos(c.invitados) + ' este mes.');
     }
     if ($('wNombres').checked) l.push(deben.length ? 'Falta pagar: ' + lista + '.' : 'Todos al día.');
     if ($('wAlias').checked) {

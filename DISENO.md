@@ -2,7 +2,7 @@
 
 Decisiones tomadas con Lucio (administrador) antes de programar. Cada cambio de diseño se anota acá primero.
 
-Estado: **etapa 1 instalada** y en prueba con datos reales; se amplía con las decisiones 30 a 43. Las etapas 2 y 3 se diseñan antes de programarlas.
+Estado: **etapa 1 instalada** y en prueba con datos reales; se amplía con las decisiones 30 a 44. Las etapas 2 y 3 se diseñan antes de programarlas.
 
 ## Decisiones
 
@@ -50,10 +50,11 @@ Estado: **etapa 1 instalada** y en prueba con datos reales; se amplía con las d
 | 41 | Mes de la cancha | Al cargar o editar un gasto de cancha se elige a qué mes corresponde (por defecto, el de la fecha de pago). "Cancha pagada" usa ese mes. Se puede cambiar aunque el gasto venga de Mercado Pago. |
 | 42 | N° de operación que no se encuentra | Si Mercado Pago no lo encuentra o no lo acepta como gasto, la app ofrece "Cargar a mano" con ese N° anotado como referencia. |
 | 43 | Invitados | Ingreso esporádico con imputación "Invitado": suma a la caja y a lo recaudado para la cancha del mes. Solo se anota el monto. En efectivo se carga en el panel ("Invitado"); por transferencia llega a "Para revisar" y se toca "Es de un invitado". Sin valor fijo: se escribe cada vez. El equipo ve solo el total cobrado de invitados por mes. |
+| 44 | Indicador de invitados | Todos ven lo que entra por invitados: en Inicio, una tarjeta con lo del mes y lo de la temporada; en Caja, el total de cada mes y de la temporada. El mensaje de WhatsApp lo dice si hubo invitados en el mes. |
 
 ## Etapas
 
-1. **Ya:** sincronización con Mercado Pago, app pública y panel del administrador: efectivo, clasificar pagos, altas y bajas, valores con "vigente desde", mensaje para WhatsApp. Ampliada con las decisiones 30 a 43: todo se corrige desde la app.
+1. **Ya:** sincronización con Mercado Pago, app pública y panel del administrador: efectivo, clasificar pagos, altas y bajas, valores con "vigente desde", mensaje para WhatsApp. Ampliada con las decisiones 30 a 44: todo se corrige desde la app.
 2. Ingreso con Google o código por mail, reclamos, "Quiero sumarme", cuentas asociadas y comprobantes con lectura del N° de operación.
 3. Saldo de la reserva "Caja Hockey" de Mercado Pago.
 

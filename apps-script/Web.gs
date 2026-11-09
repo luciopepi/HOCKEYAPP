@@ -66,6 +66,7 @@ function datosApp_() {
     caja: {
       saldo: est.caja.saldo, saldoInicial: est.caja.saldoInicial, cobrado: est.caja.cobrado,
       gastado: est.caja.gastado, adelantos: est.caja.adelantos, fondo: est.caja.fondo,
+      invitados: est.caja.cobradoInvitados,
     },
     meses: est.meses.map(m => ({ corto: MESES_CORTOS[m.getMonth()], largo: nombreMes_(m) })),
     mesIdx: est.idxActual,
