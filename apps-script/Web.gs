@@ -60,7 +60,7 @@ function datosApp_() {
     pendientes: est.porClasificar + porRevisar_(ss).length,
     cancha: {
       costo: c.costo, recaudado: c.recaudado, faltan: c.faltan, pagaron: c.pagaron, total: c.total,
-      necesarios: c.necesarios, pagada: c.pagada, fechaPago: fechaCorta_(c.fechaPago),
+      necesarios: c.necesarios, pagada: c.pagada, fechaPago: fechaCorta_(c.fechaPago), invitados: c.invitados,
       vence: fechaCorta_(new Date(est.mesActual.getFullYear(), est.mesActual.getMonth(), diaVence)),
     },
     caja: {
@@ -77,7 +77,7 @@ function datosApp_() {
       baja: !!x.baja,
     })),
     valores: tablaValores_(d.valores).map(v => ({ desde: v.texto, cuota: v.cuota, cancha: v.cancha })),
-    porMes: est.porMes.slice().reverse().map(p => ({ mes: nombreMes_(p.mes), cuotas: p.cuotas, otros: p.otros })),
+    porMes: est.porMes.slice().reverse().map(p => ({ mes: nombreMes_(p.mes), cuotas: p.cuotas, otros: p.otros, invitados: p.invitados })),
     gastos: d.gastos.filter(g => !g.anulado).sort((a, b) => b.fecha - a.fecha).slice(0, 30).map(g => ({
       fecha: fechaCorta_(g.fecha), concepto: g.concepto || g.tipo, tipo: g.tipo, destinatario: sinCuentas_(g.destinatario), monto: g.monto,
     })),
@@ -516,11 +516,57 @@ function adminCargarPago(pin, d) {
   });
 }
 
+/**
+ * Integrante al que se le carga un pago. Un pago de invitado puede no tener integrante
+ * ("Invitado") o ser de un integrante que pagó por su invitado (decisión 43).
+ */
+function quienPaga_(ss, apodo, imputacion) {
+  if (imputacion === IMP.INVITADO && String(apodo == null ? '' : apodo).trim() === INVITADO) return { apodo: INVITADO };
+  return miembroPorApodo_(leerMiembros_(hoja_(ss, HOJA.INTEGRANTES)), apodo);
+}
+
+/** Pago de un invitado en efectivo (decisión 43): solo el monto. */
+function adminCargarInvitado(pin, d) {
+  verificarPin_(pin);
+  d = d || {};
+  return conLock_(() => {
+    const ss = SpreadsheetApp.getActive();
+    const monto = montoValido_(d.monto);
+    const fecha = fechaApp_(d.fecha);
+    const clave = ['adminInvitado', monto, d.fecha].join('|');
+    const cache = CacheService.getScriptCache();
+    if (cache.get(clave)) throw new Error('Ese pago ya se cargó hace un momento.');
+    const h = hoja_(ss, HOJA.PAGOS);
+    agregarFilas_(h, [[fecha, INVITADO, monto, IMP.INVITADO, 'Efectivo', '', '', '', '', NOTA_APP]], COL_PAGOS.TOTAL, [6, 7, 8, 9, 10], COLOR_MANUAL);
+    h.getRange(h.getLastRow(), 1).setNumberFormat('dd/mm/yyyy');
+    cache.put(clave, '1', 120);
+    return respuestaAdmin_('Listo: pago de invitado por ' + pesos_(monto) + ' guardado. Suma a la cancha del mes.');
+  });
+}
+
+/** Una transferencia de "Por revisar" es de un invitado: pasa a Pagos sin integrante y sin guardar cuentas. */
+function adminInvitado(pin, op) {
+  verificarPin_(pin);
+  return conLock_(() => {
+    const ss = SpreadsheetApp.getActive();
+    const x = porRevisar_(ss).find(y => y.tipo === 'Ingreso' && y.op === normalizarOp_(op));
+    if (!x) throw new Error('Esa transferencia ya no está en Por revisar. Actualizá la lista.');
+    const h = hoja_(ss, HOJA.PAGOS);
+    if (!operaciones_(h, COL_PAGOS.OPERACION).has(x.op)) {
+      agregarFilas_(h, [[soloDia_(x.cuando || new Date()), INVITADO, x.monto, IMP.INVITADO, x.medio || 'Transferencia Mercado Pago', '', '', '', x.op,
+        'Transferencia de un invitado, asignada desde la app']], COL_PAGOS.TOTAL, [6, 7, 8, 9]);
+      h.getRange(h.getLastRow(), 1).setNumberFormat('dd/mm/yyyy');
+    }
+    hoja_(ss, HOJA.REVISAR).deleteRow(x.fila);
+    return respuestaAdmin_('Listo: transferencia de ' + pesos_(x.monto) + ' cargada como pago de invitado. Suma a la cancha del mes.');
+  });
+}
+
 /** Cambia la imputación de un pago (clasificar o reclasificar). */
 function adminClasificar(pin, fila, imputacion, esperado) {
   verificarPin_(pin);
   return conLock_(() => {
-    if ([IMP.CUOTA, IMP.DEUDA_ANTERIOR, IMP.OTRO_CAJA, IMP.NO_CAJA].indexOf(imputacion) === -1) throw new Error('Elegí una opción válida.');
+    if ([IMP.CUOTA, IMP.DEUDA_ANTERIOR, IMP.OTRO_CAJA, IMP.NO_CAJA, IMP.INVITADO].indexOf(imputacion) === -1) throw new Error('Elegí una opción válida.');
     const ss = SpreadsheetApp.getActive();
     const h = hoja_(ss, HOJA.PAGOS);
     const f = Number(fila);
@@ -568,10 +614,10 @@ function adminEditarPago(pin, fila, esperado, d) {
     const antes = { apodo: String(v[1]).trim(), monto: Number(v[2]), imp: imputacion_(v[3]),
       fecha: v[0] instanceof Date ? soloDia_(v[0]) : null };
     const bloqueado = pagoBloqueado_(normalizarOp_(v[COL_PAGOS.OPERACION - 1]), v[COL_PAGOS.TOTAL - 1], vinculadoMp_(ss));
-    const m = miembroPorApodo_(leerMiembros_(hoja_(ss, HOJA.INTEGRANTES)), d.apodo);
-    const validas = [IMP.CUOTA, IMP.DEUDA_ANTERIOR, IMP.OTRO_CAJA, IMP.NO_CAJA]
+    const validas = [IMP.CUOTA, IMP.DEUDA_ANTERIOR, IMP.OTRO_CAJA, IMP.NO_CAJA, IMP.INVITADO]
       .concat(antes.imp === IMP.CLASIFICAR ? [IMP.CLASIFICAR] : []);
     if (validas.indexOf(d.imputacion) === -1) throw new Error('Elegí a qué corresponde el pago.');
+    const m = quienPaga_(ss, d.apodo, d.imputacion);
     const monto = bloqueado ? antes.monto : montoValido_(d.monto);
     const fecha = bloqueado ? antes.fecha : fechaApp_(d.fecha);
     const nota = textoLibre_(d.nota, 200);
@@ -612,12 +658,11 @@ function adminRepartirPago(pin, fila, esperado, partes) {
     const { f, v } = filaPago_(h, fila, esperado);
     if (imputacion_(v[3]) === IMP.ANULADO) throw new Error('Ese pago está anulado.');
     if (!Array.isArray(partes) || partes.length < 2 || partes.length > 5) throw new Error('Repartilo en 2 a 5 partes.');
-    const miembros = leerMiembros_(hoja_(ss, HOJA.INTEGRANTES));
-    const validas = [IMP.CUOTA, IMP.DEUDA_ANTERIOR, IMP.OTRO_CAJA, IMP.NO_CAJA];
+    const validas = [IMP.CUOTA, IMP.DEUDA_ANTERIOR, IMP.OTRO_CAJA, IMP.NO_CAJA, IMP.INVITADO];
     const lista = partes.map(p => {
       p = p || {};
       if (validas.indexOf(p.imputacion) === -1) throw new Error('Elegí a qué corresponde cada parte.');
-      return { apodo: miembroPorApodo_(miembros, p.apodo).apodo, monto: montoValido_(p.monto), imputacion: p.imputacion };
+      return { apodo: quienPaga_(ss, p.apodo, p.imputacion).apodo, monto: montoValido_(p.monto), imputacion: p.imputacion };
     });
     const total = Number(v[2]);
     if (Math.round(lista.reduce((s, p) => s + p.monto, 0) * 100) !== Math.round(total * 100)) {
@@ -809,6 +854,7 @@ function adminAgregarIntegrante(pin, d) {
     const apodo = textoLibre_(d.apodo, 30);
     if (!/^[\p{L}\d][\p{L}\d .'-]*$/u.test(apodo)) throw new Error('Escribí un apodo con letras o números.');
     const miembros = leerMiembros_(hInt);
+    if (apodo.toLowerCase() === INVITADO.toLowerCase()) throw new Error('"Invitado" está reservado para los pagos de invitados.');
     if (miembros.some(x => x.apodo.toLowerCase() === apodo.toLowerCase())) throw new Error('Ya hay un integrante con ese apodo.');
     const cuit = soloDigitos_(d.cuit);
     if (cuit && cuit.length !== 11) throw new Error('El CUIT tiene que tener 11 números.');
@@ -875,6 +921,7 @@ function adminEditarIntegrante(pin, apodoActual, d) {
     if (miembros.some(x => x !== m && x.apodo.toLowerCase() === apodo.toLowerCase())) {
       throw new Error('Ya hay otro integrante con ese apodo.');
     }
+    if (apodo.toLowerCase() === INVITADO.toLowerCase()) throw new Error('"Invitado" está reservado para los pagos de invitados.');
     const pares = cuentasMp_();
     const mantener = (Array.isArray(d.cuentasMp) ? d.cuentasMp : []).map(normalizarOp_);
     const ids = m.ids.filter(id => mantener.indexOf(id) !== -1);

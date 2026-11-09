@@ -1370,6 +1370,46 @@ section('B19 gastos a mano: efectivo o sin comprobante de Mercado Pago');
   check('sin PIN no carga', x.e && /PIN/.test(x.e.message));
 }
 
+section('B20 invitados: efectivo, transferencia y pago de un integrante por su invitado');
+{
+  const w = mundoAdmin(basePayments().concat([
+    pay({ id: 9001, created: '2026-10-10 09:00', payerId: 444000321, cuit: '20999888777', amount: 3000, first: 'Visita' }),
+    pay({ id: 9002, created: '2026-10-10 09:30', payerId: ID.Juancho, cuit: '20301112223', amount: 18000 }),
+  ]));
+  sync(w, '2026-10-10 10:00');
+  let x = intentar(() => w.ctx.adminEntrar(PIN));
+  const antes = intentar(() => w.ctx.datosApp_()).r;
+  x = intentar(() => w.ctx.adminCargarInvitado(PIN, { monto: '3000', fecha: '2026-10-10' }));
+  check('efectivo: fila "Invitado" sin integrante', !x.e && rowsOf(w, 'Pagos').some(r => r[1] === 'Invitado' && r[2] === '3000' && r[3] === 'Invitado' && r[4] === 'Efectivo'), x.e && x.e.message);
+  check('suma a la cancha del mes y a la caja', x.r.datos.cancha.recaudado === antes.cancha.recaudado + 3000 && x.r.datos.cancha.invitados === 3000 &&
+    x.r.datos.caja.cobrado === antes.caja.cobrado + 3000, JSON.stringify(x.r.datos.cancha));
+  check('el público ve el total de invitados del mes, no una persona "Invitado"', x.r.datos.porMes[0].invitados === 3000 && !x.r.datos.integrantes.some(m => m.apodo === 'Invitado') &&
+    !x.r.admin.integrantes.some(m => m.apodo === 'Invitado'));
+  x = intentar(() => w.ctx.adminCargarInvitado(PIN, { monto: '3000', fecha: '2026-10-10' }));
+  check('doble toque: no lo carga dos veces', x.e && /hace un momento/.test(x.e.message));
+  x = intentar(() => w.ctx.adminInvitado(PIN, '9001'));
+  check('transferencia de "Para revisar": pasa a Pagos como invitado, sin guardar la cuenta', !x.e && rowsOf(w, 'Pagos').some(r => r[8] === '9001' && r[1] === 'Invitado' && r[3] === 'Invitado' && r[6] === '') &&
+    !findOp(revisar(w), 7, 9001).length && x.r.datos.cancha.invitados === 6000, x.e ? x.e.message : JSON.stringify(x.r.datos.cancha));
+  sync(w, '2026-10-10 11:00');
+  check('no vuelve a aparecer', rowsOf(w, 'Pagos').filter(r => r[8] === '9001').length === 1 && !findOp(revisar(w), 7, 9001).length);
+  x = intentar(() => w.ctx.adminEntrar(PIN));
+  const cla = x.r.porClasificar.find(p => p.monto === 18000);
+  const pj = x.r.pagos.find(p => p.monto === 18000);
+  x = intentar(() => w.ctx.adminRepartirPago(PIN, pj.fila, { apodo: 'Juancho', monto: 18000 }, [{ apodo: 'Juancho', monto: '15000', imputacion: 'Cuota' }, { apodo: 'Invitado', monto: '3000', imputacion: 'Invitado' }]));
+  check('Juancho pagó $18.000 (cuota + su invitado): se reparte', !!cla && !x.e && rowsOf(w, 'Pagos').filter(r => r[8] === '9002').length === 2 &&
+    rowsOf(w, 'Pagos').some(r => r[8] === '9002' && r[1] === 'Invitado' && r[2] === '3000') && x.r.datos.cancha.invitados === 9000, x.e ? x.e.message : JSON.stringify(x.r.datos.cancha));
+  const fInv = rowsOf(w, 'Pagos').findIndex(r => r[1] === 'Invitado' && r[4] === 'Efectivo') + 2;
+  x = intentar(() => w.ctx.adminEditarPago(PIN, fInv, { apodo: 'Invitado', monto: 3000 }, { apodo: 'Invitado', monto: '3000', fecha: '2026-10-10', imputacion: 'Cuota' }));
+  check('un pago sin integrante no puede ser una cuota', x.e && /integrante/.test(x.e.message), x.e && x.e.message);
+  x = intentar(() => w.ctx.adminEditarPago(PIN, fInv, { apodo: 'Invitado', monto: 3000 }, { apodo: 'Invitado', monto: '4000', fecha: '2026-10-10', imputacion: 'Invitado' }));
+  check('se corrige el monto de un pago de invitado', !x.e && rowsOf(w, 'Pagos')[fInv - 2][2] === '4000', x.e && x.e.message);
+  x = intentar(() => w.ctx.adminAgregarIntegrante(PIN, { apodo: 'invitado', alta: '2026-10-10' }));
+  check('"Invitado" no se puede usar como apodo', x.e && /reservado/.test(x.e.message));
+  w.run('recalcular_');
+  const res = w.sheet('Resumen').rows(1).find(r => r[0] === 'Cobrado de invitados ($)');
+  check('el Resumen muestra lo cobrado de invitados', res && /10000|10\.000/.test(res[1]), JSON.stringify(res));
+}
+
 section('A11 cualquier orden de archivos en el editor');
 {
   const archivos = ['Codigo.gs', 'Calculo.gs', 'Web.gs'];

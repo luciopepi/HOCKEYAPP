@@ -25,8 +25,10 @@ const IMP = {
   NO_CAJA: 'No es de la caja',
   CLASIFICAR: 'Por clasificar',
   ANULADO: 'Anulado', // también es el tipo de un gasto anulado
+  INVITADO: 'Invitado', // lo que paga un invitado: suma a la caja y a la cancha del mes (decisión 43)
 };
-const IMPUTACIONES = [IMP.CUOTA, IMP.DEUDA_ANTERIOR, IMP.OTRO_CAJA, IMP.NO_CAJA, IMP.CLASIFICAR, IMP.ANULADO];
+const IMPUTACIONES = [IMP.CUOTA, IMP.DEUDA_ANTERIOR, IMP.OTRO_CAJA, IMP.NO_CAJA, IMP.CLASIFICAR, IMP.ANULADO, IMP.INVITADO];
+const INVITADO = 'Invitado'; // "integrante" de un pago de invitado cargado sin integrante
 
 function imputacion_(v) {
   const s = String(v == null ? '' : v).trim();
@@ -37,7 +39,7 @@ function imputacion_(v) {
 
 /** ¿El pago suma a la caja? Los "No es de la caja", "Por clasificar" y "Anulado" no. */
 function sumaACaja_(imp) {
-  return imp === IMP.CUOTA || imp === IMP.DEUDA_ANTERIOR || imp === IMP.OTRO_CAJA;
+  return imp === IMP.CUOTA || imp === IMP.DEUDA_ANTERIOR || imp === IMP.OTRO_CAJA || imp === IMP.INVITADO;
 }
 
 // ------------------------------------------------------------- meses
@@ -180,6 +182,7 @@ function asegurarEstructura_(ss) {
 }
 
 const NOTA_IMPUTACIONES = 'Cuota: suma a la cuota. Deuda anterior y Otro de la caja: suman a la caja, no a la cuota. ' +
+  'Invitado: suma a la caja y a la cancha del mes. ' +
   'No es de la caja (asados, etc.), Por clasificar y Anulado: no suman. Se cambian desde el panel de la app.';
 
 // ------------------------------------------------------------- lectura
@@ -311,26 +314,35 @@ function calcularEstado_(d) {
   // Caja
   let cobradoCuotas = 0;
   let cobradoOtros = 0;
+  let cobradoInvitados = 0;
+  let invitadosMes = 0;
   const porMes = {};
+  const finMes = sumarMeses_(mesActual, 1);
   d.pagos.forEach(p => {
     if (!sumaACaja_(p.imputacion)) return;
-    if (p.imputacion === IMP.CUOTA) cobradoCuotas += p.monto; else cobradoOtros += p.monto;
     const k = claveMes_(p.fecha);
-    porMes[k] = porMes[k] || { mes: primerDia_(p.fecha), cuotas: 0, otros: 0 };
-    if (p.imputacion === IMP.CUOTA) porMes[k].cuotas += p.monto; else porMes[k].otros += p.monto;
+    porMes[k] = porMes[k] || { mes: primerDia_(p.fecha), cuotas: 0, otros: 0, invitados: 0 };
+    if (p.imputacion === IMP.CUOTA) {
+      cobradoCuotas += p.monto; porMes[k].cuotas += p.monto;
+    } else if (p.imputacion === IMP.INVITADO) {
+      cobradoInvitados += p.monto; porMes[k].invitados += p.monto;
+      if (p.fecha >= mesActual && p.fecha < finMes) invitadosMes += p.monto;
+    } else {
+      cobradoOtros += p.monto; porMes[k].otros += p.monto;
+    }
   });
   // La cuota automática del administrador cuenta en cada mes vencido.
   integrantes.filter(x => x.auto).forEach(x => {
     x.estados.forEach((s, i) => {
       if (meses[i] > mesActual || s.e === 'nojuega') return;
       const k = claveMes_(meses[i]);
-      porMes[k] = porMes[k] || { mes: meses[i], cuotas: 0, otros: 0 };
+      porMes[k] = porMes[k] || { mes: meses[i], cuotas: 0, otros: 0, invitados: 0 };
       porMes[k].cuotas += s.c;
     });
   });
 
   const gastado = gastos.reduce((s, g) => s + g.monto, 0);
-  const cobrado = cobradoCuotas + cobradoAdmin + cobradoOtros;
+  const cobrado = cobradoCuotas + cobradoAdmin + cobradoOtros + cobradoInvitados;
   const saldo = d.saldoInicial + cobrado - gastado;
   const adelantos = integrantes.reduce((s, x) => s + x.adelantado, 0);
 
@@ -338,7 +350,8 @@ function calcularEstado_(d) {
   const cuotaMes = cuotaDe(mesActual);
   // La cancha del mes es la que corresponde a este mes (decisión 41), no la que se pagó en este mes.
   const pagoCancha = gastos.find(g => g.tipo === 'Cancha' && g.mes && g.mes.getTime() === mesActual.getTime());
-  const recaudado = integrantes.reduce((s, x) => s + x.aporteMes, 0);
+  // Lo que pagan los invitados en el mes también cubre la cancha (decisión 43).
+  const recaudado = integrantes.reduce((s, x) => s + x.aporteMes, 0) + invitadosMes;
   const activos = integrantes.filter(x => x.cargoActual > 0);
 
   return {
@@ -356,6 +369,7 @@ function calcularEstado_(d) {
       necesarios: cuotaMes > 0 ? Math.ceil(costo / cuotaMes) : 0,
       pagada: !!pagoCancha,
       fechaPago: pagoCancha ? pagoCancha.fecha : null,
+      invitados: invitadosMes,
     },
     caja: {
       saldoInicial: d.saldoInicial,
@@ -363,6 +377,7 @@ function calcularEstado_(d) {
       cobradoCuotas: cobradoCuotas + cobradoAdmin,
       cobradoAdmin: cobradoAdmin,
       cobradoOtros: cobradoOtros,
+      cobradoInvitados: cobradoInvitados,
       gastado: gastado,
       saldo: saldo,
       adelantos: adelantos,
@@ -463,6 +478,7 @@ function escribirResumen_(ss, est, datos) {
     ['Integrantes con deuda', k.conDeuda],
     ['Deuda total, incluido el mes actual ($)', k.deuda],
     ['Cobrado por otros conceptos de la caja ($)', k.cobradoOtros],
+    ['Cobrado de invitados ($)', k.cobradoInvitados],
     ['Pagos por clasificar (no suman)', est.porClasificar],
   ];
   const antes = Math.max(h.getLastRow(), filas.length);

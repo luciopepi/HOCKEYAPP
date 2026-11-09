@@ -51,6 +51,7 @@ Después de instalar, todo se hace desde la app (DISENO.md, decisión 30). El me
 | Para revisar | Asignar transferencias sin dueño (se guarda la cuenta y las próximas entran solas) o marcarlas "No es de la caja". Si ya había un pago cargado a mano sin N° de Mercado Pago, ofrece "Es el pago de…" (de cualquiera si vino de un banco; si trae la cuenta de un integrante, solo de ese integrante). Devoluciones de Mercado Pago (anular el pago) y pagos al club por otro monto (cargar como gasto). Clasificar los pagos que no son múltiplo de la cuota |
 | Buscar transferencias ahora | Trae las transferencias de Mercado Pago en el momento, sin esperar los 30 minutos |
 | Pago en efectivo | Cuota, otra cosa de la caja o algo que no es de la caja |
+| Pago de invitado | En efectivo: solo el monto. Si transfirió, en "Para revisar" se toca "Es de un invitado". Suma a la caja y a lo recaudado para la cancha del mes |
 | Gasto | Con comprobante: subís la imagen o pegás el N° de operación, y la app trae monto, fecha y destinatario. Sin comprobante (efectivo u otro): monto y qué era, con la fecha del día. Si el N° no aparece en Mercado Pago, "Cargar a mano con este N°" |
 | Pagos | Editar (integrante, fecha, monto, imputación, nota), repartir entre integrantes (si pagó por varios) o anular. Lo que vino de Mercado Pago no cambia de monto ni de fecha. Un pago anulado no suma y queda registrado; se puede restaurar |
 | Gastos | Editar o anular, igual que los pagos. En la cancha se elige a qué mes corresponde |
@@ -67,7 +68,7 @@ No hace falta editar la planilla: la escriben la sincronización y el panel de l
 
 | Hoja | Quién la escribe |
 |---|---|
-| Pagos | La sincronización y el panel. Imputación: **Cuota**, **Deuda anterior**, **Otro de la caja** (suman), **No es de la caja**, **Por clasificar** y **Anulado** (no suman). Los anulados quedan tachados |
+| Pagos | La sincronización y el panel. Imputación: **Cuota**, **Deuda anterior**, **Otro de la caja**, **Invitado** (suman; Invitado también a la cancha del mes), **No es de la caja**, **Por clasificar** y **Anulado** (no suman). Integrante "Invitado": pago de un invitado sin integrante. Los anulados quedan tachados |
 | Gastos | La sincronización (cancha) y el panel. Un gasto anulado queda con tipo **Anulado**, tachado. Columna I: mes de la cancha (vacía: el mes de la fecha de pago) |
 | Integrantes | El panel. Columna K: fecha de alta. Columna L: último mes (baja). Varios CUIT en una celda, separados por coma |
 | Valores | El panel. Cada fila cambia la cuota, la cancha o las dos desde ese mes |
@@ -111,7 +112,7 @@ Cómo se calcula (DISENO.md, decisiones 10 a 12, 22 y 25):
 
 ## Pruebas
 
-`test/` simula Google Sheets, Drive y la API de Mercado Pago (326 casos):
+`test/` simula Google Sheets, Drive y la API de Mercado Pago (337 casos):
 
 ```
 TZ=America/Argentina/San_Juan node apps-script/test/run.js
