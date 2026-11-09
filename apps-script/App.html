@@ -942,7 +942,18 @@ function vConfig() {
     '<div class="dos"><div class="campo"><label for="cNuevo">PIN nuevo</label><input type="password" id="cNuevo" inputmode="numeric" autocomplete="new-password" maxlength="12"></div>' +
     '<div class="campo"><label for="cRepetir">Repetilo</label><input type="password" id="cRepetir" inputmode="numeric" autocomplete="new-password" maxlength="12"></div></div>' +
     '<button class="prim" id="cPin">Cambiar PIN</button><p class="ayuda">De 6 a 12 números. Los otros celulares recordados van a tener que volver a entrar. Si te olvidás el PIN, lo definís de nuevo desde el menú de la planilla.</p></div>' +
+    '<div class="card"><h2>Pago de la cancha</h2>' +
+    (c.club.auto ? '<div class="aviso-box info">Automático: las transferencias' + (c.club.nombre ? ' a ' + esc(c.club.nombre) : ' al club') +
+      ' por el valor de la cancha se cargan solas como Cancha, en hasta 30 minutos (o con "Buscar transferencias ahora").</div>'
+      : '<div class="aviso-box alerta">Manual: la cancha se carga desde Gasto.' + (c.club.aviso ? ' ' + esc(c.club.aviso) + '.' : '') + '</div>') +
+    '<div class="linea-sel"><label class="solo-lector" for="cClub">N° de operación</label><input type="text" id="cClub" inputmode="numeric" placeholder="N° de un pago al club"><button class="sec" id="cClubOk">' +
+    (c.club.auto ? 'Cambiar' : 'Reconocer') + '</button></div><p class="ayuda">Pegá el N° de operación de una transferencia de cancha para que la app reconozca al club. Hace falta solo si el club cambia de cuenta.</p></div>' +
     '<p class="ayuda">La clave de Mercado Pago se cambia desde el menú de la planilla: así nadie la puede cambiar con solo saber el PIN.</p>';
+  $('cClubOk').onclick = () => {
+    const op = $('cClub').value.trim();
+    if (!op) return toast('Pegá el N° de operación de un pago al club.', true);
+    servidor('adminAprenderClub', [pin, op], listo('config'), $('cClubOk'));
+  };
   $('cGuardar').onclick = () => servidor('adminConfig', [pin, { saldoInicial: $('cSaldo').value, alias: $('cAlias').value, vence: $('cVence').value }], listo('config'), $('cGuardar'));
   $('cPin').onclick = () => {
     const actual = $('cActual').value.trim(), nuevo = $('cNuevo').value.trim();

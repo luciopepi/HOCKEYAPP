@@ -340,8 +340,23 @@ function adminDatos_() {
       saldoInicial: d.saldoInicial,
       alias: cfg.getRange(CELDA.ALIAS).getDisplayValue(),
       vence: Number(cfg.getRange(CELDA.VENCIMIENTO).getValue()) || 10,
+      club: clubAdmin_(cfg),
     },
   };
+}
+
+/** Si la cancha se carga sola y a quién se reconoce como el club. Sin cuentas ni IDs. */
+function clubAdmin_(cfg) {
+  let firma = null;
+  try {
+    firma = JSON.parse(PropertiesService.getScriptProperties().getProperty(PROP_CLUB) || 'null');
+  } catch (e) {
+    firma = null;
+  }
+  if (!firma && soloDigitos_(cfg.getRange(CELDA.ID_CLUB).getValue())) firma = { cobrador: 'sí' };
+  const resultado = String(cfg.getRange(CELDA.RESULTADO).getValue() || '');
+  const aviso = (resultado.match(/(No pude reconocer al club[^:]*|No se pudo reconocer[^.]*|No hay un pago de cancha[^:]*|Mercado Pago no devuelve tus pagos enviados[^:]*)/) || [''])[0];
+  return firma ? { auto: true, nombre: firma.nombre || '' } : { auto: false, aviso: aviso };
 }
 
 function isoDia_(d) {
@@ -419,6 +434,25 @@ function adminSalir(cred) {
   const h = hashPin_('celular', c);
   conLockPin_(() => props.setProperty(TOKENS_PROP, JSON.stringify(celulares_(props).filter(t => t.h !== h))));
   return true;
+}
+
+/**
+ * Enseña a la app a reconocer las transferencias al club con un pago de cancha (decisión 45).
+ * Sirve si el club cambia de cuenta o si no se pudo aprender sola.
+ */
+function adminAprenderClub(pin, op) {
+  verificarPin_(pin);
+  const id = soloDigitos_(op);
+  if (id.length < 6) throw new Error('Pegá el N° de operación de una transferencia al club.');
+  const pago = buscarPago_(id);
+  if (!pago) throw new Error('No encontré esa operación en tu cuenta de Mercado Pago.');
+  const r = aprenderClub_(pago, String(miUsuario_().id));
+  if (!r.firma) throw new Error(r.aviso);
+  return conLock_(() => {
+    guardarFirmaClub_(r.firma, hoja_(SpreadsheetApp.getActive(), HOJA.CONFIG));
+    return respuestaAdmin_('Listo: las transferencias a ' + (r.firma.nombre || 'esa cuenta') +
+      ' por el valor de la cancha se cargan solas como Cancha.');
+  });
 }
 
 /** Saldo inicial, alias y día de vencimiento de la cancha (decisión 38). */

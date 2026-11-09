@@ -57,6 +57,8 @@ const TOLERANCIA_CANCHA = 1.10; // admite hasta 10% de recargo por mora
 const NOTA_AUTO = 'Cargado automáticamente desde Mercado Pago';
 const PROP_BUSQUEDA = 'BUSQUEDA_COMPLETA'; // mes de inicio ya revisado completo
 const PROP_CUENTAS = 'CUENTAS_MP';        // ID de Mercado Pago → CUIT con el que se aprendió
+const PROP_CLUB = 'CLUB_FIRMA';           // cómo se reconocen las transferencias al club (decisión 45)
+const OPERACIONES_COMPRA = ['regular_payment', 'pos_payment']; // compras con QR o tarjeta (buffet): no son la cancha
 const COLOR_MANUAL = '#0000FF';
 const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio',
   'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
@@ -170,14 +172,20 @@ function sincronizar_() {
     const proc = registroProcesados_(ss);
     const todos = buscarPagos_({}, desde, inicio);
 
-    const r = procesarRecibidos_(ss, config, todos, miId, desde, proc);
+    let club = { firma: null, aviso: '' };
+    try {
+      club = firmaClub_(ss, config, miId);
+    } catch (e) {
+      club.aviso = 'No se pudo reconocer la cuenta del club: ' + e.message;
+    }
+    const r = procesarRecibidos_(ss, config, todos, miId, desde, proc, club.firma);
     let texto = `${r.cargados} pagos cargados, ${r.revisar} para revisar`;
     if (r.reversiones) texto += `, ${r.reversiones} devoluciones avisadas`;
 
     // Los pagos enviados van aparte: si fallan no frenan la carga de cuotas.
     try {
       const enviados = unirPorId_(todos, buscarPagos_({ 'payer.id': miId }, desde, inicio));
-      const g = procesarEnviados_(ss, config, enviados, miId, desde, proc);
+      const g = procesarEnviados_(ss, config, enviados, miId, desde, proc, club);
       texto += `, ${g.cargados} pagos al club cargados`;
       if (g.aviso) texto += '. ' + g.aviso;
     } catch (e) {
@@ -226,7 +234,7 @@ function inicioBusqueda_(config) {
 
 // ------------------------------------------------------------ recibidos
 
-function procesarRecibidos_(ss, config, pagos, miId, desde, proc) {
+function procesarRecibidos_(ss, config, pagos, miId, desde, proc, firmaClub) {
   const hPagos = hoja_(ss, HOJA.PAGOS);
   const hInt = hoja_(ss, HOJA.INTEGRANTES);
   const hRev = hojaRevisar_(ss);
@@ -251,6 +259,7 @@ function procesarRecibidos_(ss, config, pagos, miId, desde, proc) {
 
   pagos
     .filter(p => idCobrador_(p) === miId)
+    .filter(p => !esDelClub_(p, firmaClub, miId)) // una transferencia al club puede figurar con tu cuenta de los dos lados
     .sort((a, b) => fechaPago_(a) - fechaPago_(b))
     .forEach(p => {
       const id = String(p.id);
@@ -389,28 +398,17 @@ function textoDuplicado_(dup) {
 
 // ------------------------------------------------------------- enviados
 
-function procesarEnviados_(ss, config, pagos, miId, desde, proc) {
+/**
+ * Transferencias al club (decisión 45): las que coinciden con la firma del club y por el costo
+ * de la cancha (hasta 10% más) van solas a Gastos como Cancha del mes; si coinciden con el costo
+ * del mes siguiente, como cancha pagada por adelantado. Las demás, a "Para revisar".
+ */
+function procesarEnviados_(ss, config, pagos, miId, desde, proc, club) {
   const hGastos = hoja_(ss, HOJA.GASTOS);
-  let idClub = soloDigitos_(config.getRange(CELDA.ID_CLUB).getValue());
   let aviso = '';
-  if (!idClub) {
-    const club = detectarClub_(hGastos, miId);
-    if (!club) {
-      return { cargados: 0, aviso: 'No se pudo detectar la cuenta del club: los pagos de cancha se cargan desde la app (Gasto).' };
-    }
-    // La búsqueda tiene que devolver el pago con el que se detectó el club.
-    const dia = 24 * 3600 * 1000;
-    const prueba = buscarPagos_({ 'payer.id': miId },
-      new Date(club.fecha.getTime() - dia), new Date(club.fecha.getTime() + dia), 'date_created');
-    if (!prueba.some(p => String(p.id) === club.pagoId)) {
-      return { cargados: 0, aviso: 'Mercado Pago no devuelve tus pagos enviados en la búsqueda: los pagos de cancha se cargan desde la app (Gasto).' };
-    }
-    idClub = club.id;
-    config.getRange(CELDA.ID_CLUB).setNumberFormat('@').setValue(idClub);
-  }
-  if (idClub === miId) {
-    return { cargados: 0, aviso: 'Config ' + CELDA.ID_CLUB + ' tiene tu propio ID de Mercado Pago: borralo para que se detecte de nuevo.' };
-  }
+  const firma = club && club.firma;
+  if (!firma) return { cargados: 0, aviso: (club && club.aviso) || 'No se pudo reconocer la cuenta del club.' };
+  const nombreClub = firma.nombre || 'Club Social y Deportivo Aberastain';
 
   const enGastos = operaciones_(hGastos, COL_GASTOS.OPERACION);
   const hRev = hojaRevisar_(ss);
@@ -422,8 +420,8 @@ function procesarEnviados_(ss, config, pagos, miId, desde, proc) {
   const dudosos = [];
 
   pagos
-    .filter(p => p.status === 'approved' && p.operation_type === 'money_transfer')
-    .filter(p => String(get_(p, 'payer.id')) === miId && idCobrador_(p) === idClub)
+    .filter(p => p.status === 'approved' && OPERACIONES_COMPRA.indexOf(p.operation_type) === -1)
+    .filter(p => esDelClub_(p, firma, miId))
     .filter(p => {
       const id = String(p.id);
       if (enGastos.has(id)) { proc.marcar(id); return false; } // ya cargado: queda vinculado
@@ -434,23 +432,29 @@ function procesarEnviados_(ss, config, pagos, miId, desde, proc) {
       const id = String(p.id);
       const fecha = fechaPago_(p);
       const monto = Number(p.transaction_amount) || 0;
-      const costo = valorEn_(valores, 'cancha', primerDia_(soloDia_(fecha)));
-      if (!(costo > 0 && monto >= costo && monto <= costo * TOLERANCIA_CANCHA)) {
-        filasRevisar.push([fecha, monto, 'Egreso', 'Transferencia Mercado Pago', 'Club Social y Deportivo Aberastain',
+      const esCancha = c => c > 0 && monto >= c && monto <= c * TOLERANCIA_CANCHA;
+      const mesPago = primerDia_(soloDia_(fecha));
+      const siguiente = sumarMeses_(mesPago, 1);
+      const costo = valorEn_(valores, 'cancha', mesPago);
+      const mesCancha = esCancha(costo) ? mesPago : esCancha(valorEn_(valores, 'cancha', siguiente)) ? siguiente : null;
+      if (!mesCancha) {
+        filasRevisar.push([fecha, monto, 'Egreso', 'Transferencia Mercado Pago', texto_(nombreClub),
           '', '', id, 'Pago al club por un monto distinto del costo de la cancha: cargalo como gasto si corresponde.']);
       } else if (yaCargados.has(claveDia_('Cancha', monto, fecha))) {
         dudosos.push(id);
       } else {
-        const mes = MESES[Number(Utilities.formatDate(fecha, ZONA, 'M')) - 1];
-        filas.push([soloDia_(fecha), 'Cancha', 'Cancha ' + mes, monto, 'Cuotas del mes',
-          'Club Social y Deportivo Aberastain', id,
-          monto > costo ? NOTA_AUTO + '. Incluye recargo por mora.' : NOTA_AUTO]);
+        const costoMes = valorEn_(valores, 'cancha', mesCancha);
+        filas.push([soloDia_(fecha), 'Cancha', 'Cancha ' + MESES[mesCancha.getMonth()], monto, 'Cuotas del mes',
+          texto_(nombreClub), id,
+          monto > costoMes ? NOTA_AUTO + '. Incluye recargo por mora.' : mesCancha > mesPago ? NOTA_AUTO + '. Pagada por adelantado.' : NOTA_AUTO,
+          mesCancha]);
         yaCargados.add(claveDia_('Cancha', monto, fecha));
       }
       proc.marcar(id);
     });
 
-  agregarFilas_(hGastos, filas, COL_GASTOS.TOTAL, [7]);
+  agregarFilas_(hGastos, filas, COL_GASTOS.MES, [7]);
+  if (filas.length) hGastos.getRange(hGastos.getLastRow() - filas.length + 1, COL_GASTOS.MES, filas.length, 1).setNumberFormat('mmm yyyy');
   agregarFilas_(hRev, filasRevisar, COL_REVISAR.TOTAL, [5, 6, 7, 8]);
   if (dudosos.length) {
     aviso = 'Pago de cancha que parece ya cargado (op. ' + dudosos.join(', ') + '): se tomó como el gasto de cancha de ese día.';
@@ -458,25 +462,113 @@ function procesarEnviados_(ss, config, pagos, miId, desde, proc) {
   return { cargados: filas.length, aviso };
 }
 
-/** Busca un pago de cancha ya cargado en Gastos y lee a qué cuenta se envió. */
-function detectarClub_(hGastos, miId) {
+// ---------------------------------------------------- cuenta del club
+
+/**
+ * Cómo reconocer las transferencias al club. La primera vez se aprende sola del último pago
+ * de cancha cargado en Gastos con su N° de operación; también desde el panel, con otro pago.
+ * Devuelve { firma, aviso }: sin firma, el aviso dice por qué.
+ */
+function firmaClub_(ss, config, miId) {
+  const props = PropertiesService.getScriptProperties();
+  try {
+    const guardada = JSON.parse(props.getProperty(PROP_CLUB) || 'null');
+    if (guardada) return { firma: guardada, aviso: '' };
+  } catch (e) {
+    // firma ilegible: se vuelve a aprender
+  }
+  const vieja = soloDigitos_(config.getRange(CELDA.ID_CLUB).getValue());
+  if (vieja && vieja !== miId) return { firma: { cobrador: vieja }, aviso: '' };
+
+  let aviso = 'No hay un pago de cancha con N° de operación en Gastos para reconocer al club: la cancha se carga desde la app (Gasto).';
+  const hGastos = hoja_(ss, HOJA.GASTOS);
   const n = hGastos.getLastRow() - 1;
-  if (n < 1) return null;
-  const filas = hGastos.getRange(2, 1, n, COL_GASTOS.TOTAL).getValues();
+  const filas = n > 0 ? hGastos.getRange(2, 1, n, COL_GASTOS.TOTAL).getValues() : [];
   for (let i = filas.length - 1; i >= 0; i--) {
     const op = normalizarOp_(filas[i][COL_GASTOS.OPERACION - 1]);
     if (String(filas[i][COL_GASTOS.TIPO - 1]).trim() !== 'Cancha' || !/^\d+$/.test(op)) continue;
+    let pago = null;
     try {
-      const pago = mpGet_('/v1/payments/' + op, {});
-      const club = pago && idCobrador_(pago);
-      if (pago.status === 'approved' && String(get_(pago, 'payer.id')) === miId && club && club !== miId) {
-        return { id: club, pagoId: String(pago.id), fecha: fechaPago_(pago) };
-      }
+      pago = mpGet_('/v1/payments/' + op, {});
     } catch (e) {
-      // el número del comprobante no es un ID de pago de la API; probar con otro
+      continue; // el número del comprobante no es un pago de la API: probar con otro
     }
+    const r = aprenderClub_(pago, miId);
+    if (r.firma) {
+      guardarFirmaClub_(r.firma, config);
+      return r;
+    }
+    aviso = r.aviso;
   }
-  return null;
+  return { firma: null, aviso: aviso };
+}
+
+function guardarFirmaClub_(firma, config) {
+  PropertiesService.getScriptProperties().setProperty(PROP_CLUB, JSON.stringify(firma));
+  if (firma.cobrador) config.getRange(CELDA.ID_CLUB).setNumberFormat('@').setValue(firma.cobrador);
+}
+
+/**
+ * Lo que identifica al destinatario de una transferencia: su cuenta de Mercado Pago (si no es
+ * la tuya), su cuenta bancaria o el titular. Mercado Pago puede mostrar una transferencia a un
+ * CVU con tu cuenta de los dos lados: ahí el destinatario está en los datos bancarios.
+ */
+function firmaDestino_(p, miId) {
+  const cobrador = idCobrador_(p);
+  const banco = get_(p, 'point_of_interaction.transaction_data.bank_info.collector') || {};
+  const f = {};
+  if (cobrador && cobrador !== miId) f.cobrador = cobrador;
+  if (banco.account_id != null && String(banco.account_id).trim()) f.cuenta = String(banco.account_id).trim();
+  const titular = normalizarNombre_(banco.account_holder_name);
+  if (titular) {
+    f.titular = titular;
+    f.nombre = String(banco.account_holder_name).trim().slice(0, 80);
+  }
+  return f;
+}
+
+function esDelClub_(p, firma, miId) {
+  if (!firma) return false;
+  const f = firmaDestino_(p, miId);
+  return !!((firma.cobrador && f.cobrador === firma.cobrador) || (firma.cuenta && f.cuenta === firma.cuenta) ||
+    (firma.titular && f.titular === firma.titular));
+}
+
+/** Firma del club a partir de un pago de cancha, verificada; o un aviso con por qué no se puede. */
+function aprenderClub_(pago, miId) {
+  if (!pago || pago.status !== 'approved') return { firma: null, aviso: 'Ese pago de cancha no está aprobado en Mercado Pago.' };
+  const f = firmaDestino_(pago, miId);
+  const yo = miUsuario_();
+  if (f.titular && f.titular === normalizarNombre_([yo.first_name, yo.last_name].filter(Boolean).join(' '))) {
+    delete f.titular; // el titular sos vos: no sirve para reconocer al club
+    delete f.nombre;
+  }
+  if (!f.cobrador && !f.cuenta && !f.titular) {
+    return { firma: null, aviso: 'No pude reconocer al club en la operación ' + pago.id + ' (' + describirPago_(pago, miId) +
+      ', datos del destinatario: ' + describirBanco_(pago) + '): la cancha se carga desde la app (Gasto).' };
+  }
+  // La búsqueda tiene que devolver ese pago: si no, ninguna transferencia al club se podría reconocer.
+  const dia = 24 * 3600 * 1000;
+  const fecha = fechaPago_(pago);
+  const desde = new Date(fecha.getTime() - dia);
+  const hasta = new Date(fecha.getTime() + dia);
+  const vistos = unirPorId_(buscarPagos_({}, desde, hasta, 'date_created'), buscarPagos_({ 'payer.id': miId }, desde, hasta, 'date_created'));
+  if (!vistos.some(p => String(p.id) === String(pago.id))) {
+    return { firma: null, aviso: 'Mercado Pago no devuelve tus pagos enviados en la búsqueda: la cancha se carga desde la app (Gasto).' };
+  }
+  f.aprendidaDe = String(pago.id);
+  return { firma: f, aviso: '' };
+}
+
+/** Qué datos del destinatario trae un pago (sin mostrar los datos). */
+function describirBanco_(p) {
+  const banco = get_(p, 'point_of_interaction.transaction_data.bank_info.collector') || {};
+  const hay = Object.keys(banco).filter(k => banco[k] != null && String(banco[k]).trim() !== '');
+  return hay.length ? hay.join('/') : 'ninguno';
+}
+
+function normalizarNombre_(s) {
+  return String(s == null ? '' : s).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 }
 
 

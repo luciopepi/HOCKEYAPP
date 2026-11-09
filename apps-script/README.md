@@ -57,7 +57,7 @@ Después de instalar, todo se hace desde la app (DISENO.md, decisión 30). El me
 | Gastos | Editar o anular, igual que los pagos. En la cancha se elige a qué mes corresponde |
 | Integrantes | Alta (después del día 15 paga media cuota ese mes), baja con el último mes que juega y deshacer la baja. En cada integrante: sus pagos y "Editar datos" (apodo, nombre, CUIT, CVU/CBU, cuentas de Mercado Pago, fecha de alta) |
 | Cuota y cancha | Valor nuevo con "vigente desde". Corregir o borrar cualquier valor cargado. Antes de guardar, muestra quién tiene que pagar más o menos |
-| Configuración | Saldo inicial, alias, día de vencimiento de la cancha y cambiar el PIN |
+| Configuración | Saldo inicial, alias, día de vencimiento de la cancha, cambiar el PIN y "Pago de la cancha" (si se carga sola y a quién reconoce como el club) |
 | Mensaje para WhatsApp | Arma el texto con la cancha del mes y quién falta, para copiar o abrir WhatsApp |
 
 Instalarla en el celular: abrí el link → Android: menú ⋮ → **Agregar a la pantalla principal**; iPhone: Compartir → **Agregar a inicio**.
@@ -88,7 +88,7 @@ Cómo se calcula (DISENO.md, decisiones 10 a 12, 22 y 25):
 | Transferencia de un integrante reconocido, múltiplo de la cuota | Pagos como "Cuota". Si ya tiene un pago cargado a mano sin N° de Mercado Pago por ese monto (o filas de un día que suman ese monto), a un día como máximo: Por revisar como posible duplicado |
 | Transferencia de un integrante reconocido, otro monto | Pagos como "Por clasificar" (no suma hasta que la clasifiques) |
 | Transferencia sin reconocer (hasta 6 cuotas) o desde un banco | Por revisar. Si hay un pago del mismo monto cargado sin N° de Mercado Pago (un día de diferencia como máximo), avisa "Posible duplicado" |
-| Transferencia al club por el costo de la cancha (hasta 10% más) | Gastos como "Cancha" |
+| Transferencia al club por el costo de la cancha (hasta 10% más) | Gastos como "Cancha" del mes; si es el costo del mes siguiente, como cancha pagada por adelantado. Al club se lo reconoce por el pago de cancha ya cargado (su cuenta de Mercado Pago, cuenta bancaria o titular) |
 | Devolución de un pago ya cargado | Aviso en Por revisar |
 
 - Reconoce a cada integrante por su ID de Mercado Pago o su CUIT.
@@ -112,7 +112,7 @@ Cómo se calcula (DISENO.md, decisiones 10 a 12, 22 y 25):
 
 ## Pruebas
 
-`test/` simula Google Sheets, Drive y la API de Mercado Pago (338 casos):
+`test/` simula Google Sheets, Drive y la API de Mercado Pago (352 casos):
 
 ```
 TZ=America/Argentina/San_Juan node apps-script/test/run.js

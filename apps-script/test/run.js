@@ -1290,25 +1290,31 @@ section('B15 repartir un pago entre integrantes');
   check('si Mercado Pago la devuelve, se anulan las dos partes', !x.e && rowsOf(w, 'Pagos').filter(r => r[8] === '8501' && r[3] === 'Anulado').length === 2, x.e && x.e.message);
 }
 
-section('B16 mes de la cancha: se elige al cargar o editar el gasto');
+section('B16 mes de la cancha: adelantada sola; se elige al cargar o editar el gasto');
 {
-  const w = mundoAdmin(basePayments().concat([pay({ id: 186000008601, created: '2026-10-10 10:00', payerId: ME, collector: CLUB, amount: 150000 })]));
+  const w = mundoAdmin(basePayments().concat([
+    pay({ id: 186000008601, created: '2026-10-10 10:00', payerId: ME, collector: CLUB, amount: 150000 }),
+    pay({ id: 186000008602, created: '2026-10-10 10:30', payerId: ME, collector: CLUB, amount: 300000 }),
+  ]));
   sync(w, '2026-10-10 11:00');
-  check('la cancha de noviembre pagada en octubre queda como pago al club por otro monto', findOp(revisar(w), 7, '186000008601').length === 1);
-  let x = intentar(() => w.ctx.adminBuscarOperacion(PIN, '186000008601'));
+  const fila = rowsOf(w, 'Gastos').find(r => r[6] === '186000008601');
+  check('la cancha de noviembre pagada en octubre se carga sola como cancha de noviembre', fila && fila[1] === 'Cancha' && fila[2] === 'Cancha noviembre' &&
+    fila[8].indexOf('01/11/2026') === 0 && /adelantado/.test(fila[7]), JSON.stringify(rowsOf(w, 'Gastos')));
+  check('otro monto: queda como pago al club por otro monto', findOp(revisar(w), 7, '186000008602').length === 1);
+  let x = intentar(() => w.ctx.adminBuscarOperacion(PIN, '186000008602'));
   check('al buscarla propone el mes del pago', !x.e && x.r.pago.mes === '2026-10', x.e ? x.e.message : JSON.stringify(x.r.pago));
-  x = intentar(() => w.ctx.adminGuardarGasto(PIN, { op: '186000008601', tipo: 'Cancha', mes: '2026-11', concepto: 'Cancha noviembre' }));
-  check('se guarda como cancha de noviembre y se cierra el aviso', !x.e && rowsOf(w, 'Gastos')[1][8].indexOf('01/11/2026') === 0 && !findOp(revisar(w), 7, '186000008601').length,
-    x.e ? x.e.message : JSON.stringify(rowsOf(w, 'Gastos')) + ' | ' + JSON.stringify(revisar(w)));
+  x = intentar(() => w.ctx.adminGuardarGasto(PIN, { op: '186000008602', tipo: 'Cancha', mes: '2026-12', concepto: 'Cancha diciembre y enero' }));
+  check('se guarda como cancha del mes elegido y se cierra el aviso', !x.e && rowsOf(w, 'Gastos').some(r => r[6] === '186000008602' && r[8].indexOf('01/12/2026') === 0) &&
+    !findOp(revisar(w), 7, '186000008602').length, x.e ? x.e.message : JSON.stringify(rowsOf(w, 'Gastos')));
   check('octubre sigue con su cancha pagada', x.r.datos.cancha.pagada && x.r.datos.cancha.fechaPago === '02/10');
   w.setNow(nowIso('2026-11-05 10:00'));
   w.run('recalcular_');
   check('en noviembre figura pagada (con la fecha en que se pagó)', w.ctx.datosApp_().cancha.pagada && w.ctx.datosApp_().cancha.fechaPago === '10/10', JSON.stringify(w.ctx.datosApp_().cancha));
   x = intentar(() => w.ctx.adminEntrar(PIN));
   const g = x.r.gastos.find(y => y.concepto === 'Cancha noviembre');
-  check('el panel muestra el mes elegido y el gasto bloqueado', g && g.mes === '2026-11' && g.bloqueado, JSON.stringify(g));
-  x = intentar(() => w.ctx.adminEditarGasto(PIN, g.fila, { monto: g.monto, concepto: g.concepto }, { tipo: 'Cancha', mes: '2026-12', concepto: g.concepto, destinatario: g.destinatario }));
-  check('se cambia el mes aunque venga de Mercado Pago', !x.e && /cancha de diciembre 2026/.test(rowsOf(w, 'Gastos')[1][7]) && !x.r.datos.cancha.pagada, x.e ? x.e.message : JSON.stringify(x.r.datos.cancha));
+  check('el panel muestra el mes y el gasto bloqueado', g && g.mes === '2026-11' && g.bloqueado, JSON.stringify(g));
+  x = intentar(() => w.ctx.adminEditarGasto(PIN, g.fila, { monto: g.monto, concepto: g.concepto }, { tipo: 'Cancha', mes: '2027-01', concepto: g.concepto, destinatario: g.destinatario }));
+  check('se cambia el mes aunque venga de Mercado Pago', !x.e && /cancha de enero 2027/.test(rowsOf(w, 'Gastos')[g.fila - 2][7]) && !x.r.datos.cancha.pagada, x.e ? x.e.message : JSON.stringify(x.r.datos.cancha));
   x = intentar(() => w.ctx.adminEditarGasto(PIN, g.fila, { monto: g.monto, concepto: g.concepto }, { tipo: 'Cancha', mes: '2025-01', concepto: g.concepto, destinatario: g.destinatario }));
   check('no acepta un mes fuera de la temporada', x.e && /mes de la temporada/.test(x.e.message));
 }
@@ -1409,6 +1415,62 @@ section('B20 invitados: efectivo, transferencia y pago de un integrante por su i
   w.run('recalcular_');
   const res = w.sheet('Resumen').rows(1).find(r => r[0] === 'Cobrado de invitados ($)');
   check('el Resumen muestra lo cobrado de invitados', res && /10000|10\.000/.test(res[1]), JSON.stringify(res));
+}
+
+section('B21 cancha automática: transferencia a un CVU con tu cuenta de los dos lados');
+{
+  // Así puede informar Mercado Pago una transferencia a un CVU: pagó y cobró tu cuenta; el club está en los datos bancarios.
+  const aCvu = (id, created, amount, titular, cuenta) => Object.assign(
+    pay({ id: id, created: created, payerId: ME, amount: amount, ptype: 'bank_transfer', pmethod: 'cvu' }),
+    { point_of_interaction: { transaction_data: { bank_info: { collector: { account_holder_name: titular, account_id: cuenta, long_name: 'Mercado Pago' }, payer: { account_holder_name: 'Admin' } } } } });
+  const CLUBN = 'Club Social y Deportivo Aberastain';
+  const w = newWorld([
+    aCvu(182263652715, '2026-10-09 09:00', 120000, CLUBN, 'CVU-CLUB'),
+    aCvu(186500000001, '2026-11-09 11:00', 150000, CLUBN, 'CVU-CLUB'),
+    aCvu(186500000002, '2026-11-09 11:30', 150000, 'Ferreteria Lopez', 'CVU-OTRO'),
+    aCvu(186500000003, '2026-11-09 12:00', 9000, 'Club Social y Deportivo ABERASTAIN', 'CVU-CLUB'),
+    // Transferencia recibida desde un banco: también con tu cuenta de los dos lados, pero de otro titular.
+    Object.assign(pay({ id: 186500000004, created: '2026-11-09 12:30', payerId: ME, amount: 15000, ptype: 'bank_transfer', pmethod: 'cvu' }),
+      { point_of_interaction: { transaction_data: { bank_info: { payer: { account_holder_name: 'Juan Perez' }, collector: { account_holder_name: 'Admin' } } } } }),
+  ], { ui: uiPin(PIN) });
+  w.setNow(nowIso('2026-11-09 13:00'));
+  w.run('definirPin');
+  let err = sync(w, '2026-11-09 13:00');
+  check('sync sin error', !err, err && err.stack);
+  const g = rowsOf(w, 'Gastos');
+  check('aprende al club del pago de octubre y carga sola la cancha de noviembre', g.some(r => r[6] === '186500000001' && r[1] === 'Cancha' && r[2] === 'Cancha noviembre' && r[5] === CLUBN),
+    JSON.stringify(g) + ' | ' + B(w, 'B36'));
+  check('una transferencia de la misma plata a otro destinatario no', !g.some(r => r[6] === '186500000002') && !findOp(revisar(w), 7, '186500000002').length);
+  check('otro monto al club: a "Para revisar" (pago al club por otro monto)', findOp(revisar(w), 7, '186500000003').length === 1 && findOp(revisar(w), 7, '186500000003')[0][2] === 'Egreso');
+  check('la transferencia recibida desde un banco sigue siendo un ingreso', findOp(revisar(w), 7, '186500000004').length === 1 && findOp(revisar(w), 7, '186500000004')[0][2] === 'Ingreso');
+  check('la cancha de noviembre figura pagada', w.ctx.datosApp_().cancha.pagada, JSON.stringify(w.ctx.datosApp_().cancha));
+  let x = intentar(() => w.ctx.adminEntrar(PIN));
+  check('Configuración dice que es automática y a quién', !x.e && x.r.config.club.auto && x.r.config.club.nombre === CLUBN, JSON.stringify(x.r && x.r.config.club));
+  err = sync(w, '2026-11-09 13:30');
+  check('no la vuelve a cargar', rowsOf(w, 'Gastos').filter(r => r[6] === '186500000001').length === 1);
+}
+
+section('B22 cancha automática: si Mercado Pago no informa al destinatario, lo dice; se enseña desde el panel');
+{
+  const w = newWorld([
+    // El pago de cancha cargado en Gastos no trae ningún dato del destinatario.
+    pay({ id: 182263652715, created: '2026-10-09 09:00', payerId: ME, amount: 120000, ptype: 'bank_transfer', pmethod: 'cvu' }),
+    pay({ id: 186600000001, created: '2026-11-09 11:00', payerId: ME, collector: CLUB, amount: 150000 }),
+    pay({ id: 186600000002, created: '2026-11-10 11:00', payerId: ME, collector: CLUB, amount: 150000 }),
+  ], { ui: uiPin(PIN) });
+  w.setNow(nowIso('2026-11-09 13:00'));
+  w.run('definirPin');
+  let err = sync(w, '2026-11-09 13:00');
+  check('el resultado explica por qué no reconoce al club, sin mostrar cuentas', !err && /No pude reconocer al club en la operación 182263652715/.test(B(w, 'B36')) &&
+    /datos del destinatario: ninguno/.test(B(w, 'B36')), B(w, 'B36'));
+  let x = intentar(() => w.ctx.adminEntrar(PIN));
+  check('Configuración dice que es manual y por qué', !x.e && !x.r.config.club.auto && /No pude reconocer al club/.test(x.r.config.club.aviso), JSON.stringify(x.r && x.r.config.club));
+  x = intentar(() => w.ctx.adminAprenderClub(PIN, '186600000001'));
+  check('se le enseña con otro pago al club', !x.e && x.r.admin.config.club.auto, x.e && x.e.message);
+  err = sync(w, '2026-11-10 13:00');
+  check('desde ahí la cancha se carga sola', !err && rowsOf(w, 'Gastos').some(r => r[6] === '186600000002' && r[1] === 'Cancha'), JSON.stringify(rowsOf(w, 'Gastos')) + ' | ' + B(w, 'B36'));
+  x = intentar(() => w.ctx.adminAprenderClub(PIN, '182263652715'));
+  check('con un pago sin datos del destinatario, explica que no puede', x.e && /No pude reconocer al club/.test(x.e.message), x.e && x.e.message);
 }
 
 section('A11 cualquier orden de archivos en el editor');
